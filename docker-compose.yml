@@ -1,0 +1,67 @@
+# TalonForge Docker Compose Configuration
+# For Coolify Deployment
+
+version: '3.8'
+
+services:
+  tf-backend:
+    build: ./server
+    container_name: talonforge-backend
+    environment:
+      - PORT=3000
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - JWT_SECRET=${JWT_SECRET}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - tf-db
+    networks:
+      - talonforge-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  tf-frontend:
+    build: ./client
+    container_name: talonforge-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - tf-backend
+    networks:
+      - talonforge-net
+    restart: unless-stopped
+
+  # Optional: Internal PostgreSQL Database
+  # If using Coolify managed database, comment this out and use DATABASE_URL from Coolify
+  tf-db:
+    image: postgres:15-alpine
+    container_name: talonforge-db
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-talonforge}
+      - POSTGRES_USER=${POSTGRES_USER:-user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-pass}
+    networks:
+      - talonforge-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-user}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  talonforge-net:
+    driver: bridge
+
+volumes:
+  pgdata:
+    driver: local
