@@ -29,7 +29,7 @@ services:
     build: ./client
     container_name: talonforge-frontend
     ports:
-      - "80:80"
+      - "8080:80"
     depends_on:
       - tf-backend
     networks:
