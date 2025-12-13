@@ -1,8 +1,6 @@
 # TalonForge Docker Compose Configuration
 # For Coolify Deployment
 
-version: '3.8'
-
 services:
   tf-backend:
     build: ./server
