@@ -11,8 +11,8 @@ services:
       - DATABASE_URL=${DATABASE_URL}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - JWT_SECRET=${JWT_SECRET}
-    ports:
-      - "3000:3000"
+    expose:
+      - "3000"
     depends_on:
       - tf-db
     networks:
@@ -28,8 +28,8 @@ services:
   tf-frontend:
     build: ./client
     container_name: talonforge-frontend
-    ports:
-      - "8080:80"
+    expose:
+      - "80"
     depends_on:
       - tf-backend
     networks:
