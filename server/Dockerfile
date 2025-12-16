@@ -4,6 +4,9 @@ FROM node:18-alpine AS build
 
 WORKDIR /app
 
+# Set NODE_ENV to development for build stage to install all dependencies
+ENV NODE_ENV=development
+
 # Copy package files
 COPY package*.json ./
 
