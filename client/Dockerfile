@@ -4,6 +4,10 @@ FROM node:18-alpine AS build
 
 WORKDIR /app
 
+# Accept build argument for API URL
+ARG VITE_API_BASE_URL=http://localhost:3001
+ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
+
 # Set NODE_ENV to development for build stage to install all dependencies
 ENV NODE_ENV=development
 

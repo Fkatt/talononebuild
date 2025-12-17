@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "dist/index.js",
   "prisma": {
-    "seed": "ts-node prisma/seed.ts"
+    "seed": "node prisma/seed.js"
   },
   "scripts": {
     "dev": "nodemon --exec ts-node src/index.ts",
