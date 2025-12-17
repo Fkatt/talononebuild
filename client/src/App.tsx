@@ -8,42 +8,15 @@ import {
   BrainCircuit,
   ShieldAlert,
   Settings,
-  Plus,
-  Copy,
-  Trash2,
-  Folder,
-  FileJson,
   CheckCircle2,
   AlertTriangle,
-  Search,
-  Lock,
-  Unlock,
-  RefreshCw,
   Zap,
-  Key,
-  Globe,
-  ChevronDown,
-  ChevronRight,
-  UploadCloud,
-  X,
   Database,
   Award,
   PlayCircle,
   Layout,
-  Link as LinkIcon,
-  Image as ImageIcon,
-  Type,
-  Store,
   Loader2,
-  LogOut,
-  User,
-  BookOpen,
-  MessageSquare,
-  Wand2,
-  ThumbsUp,
-  ThumbsDown,
-  Activity,
-  Hash
+  LogOut
 } from 'lucide-react';
 import { Login } from './components/views/Login';
 
@@ -73,28 +46,9 @@ const TalonForgeApp = ({ user, onLogout }: { user: any; onLogout: () => void }) 
   const [activeTab, setActiveTab] = useState('dashboard');
   const [notification, setNotification] = useState<any>(null);
   const [sites, setSites] = useState<any[]>([]);
-  const [protectedMode, setProtectedMode] = useState(true);
-  const [aiConfig, setAiConfig] = useState({
-    provider: 'gemini',
-    apiKeys: { gemini: '', openai: '', claude: '' },
-    customEndpoints: { gemini: '', openai: '', claude: '' },
-    modelIds: { gemini: 'gemini-1.5-pro', openai: 'gpt-4', claude: 'claude-3-opus' },
-    docs: {
-      talon: 'https://docs.talon.one/management-api',
-      contentful: 'https://www.contentful.com/developers/docs/references/content-management-api/'
-    },
-    prompts: {
-      system: "You are an expert rule architect for Talon.One. Generate valid JSON rule definitions based on the user's intent.",
-      promotions: "Focus on cart item filters, coupon validity, and discount effects.",
-      loyalty: "Focus on profile attributes, sub-ledgers, and tier upgrades."
-    },
-    suggestions: [
-      "Create a rule for 20% off shoes over $100",
-      "Award 50 points for buying specific SKU",
-      "Tier upgrade to Gold after 5 purchases"
-    ]
-  });
-  const [backups, setBackups] = useState<any>({});
+  const [protectedMode] = useState(true);
+  // const [aiConfig, setAiConfig] = useState({...}); // Commented out for now
+  // const [backups, setBackups] = useState<any>({}); // Commented out for now
 
   // Load instances from backend
   useEffect(() => {
@@ -117,10 +71,10 @@ const TalonForgeApp = ({ user, onLogout }: { user: any; onLogout: () => void }) 
     }
   };
 
-  const showNotification = (message: string, type: string = 'success') => {
-    setNotification({ message, type });
-    setTimeout(() => setNotification(null), 3000);
-  };
+  // const showNotification = (message: string, type: string = 'success') => {
+  //   setNotification({ message, type });
+  //   setTimeout(() => setNotification(null), 3000);
+  // };
 
   const handleLogout = () => {
     onLogout();
@@ -228,7 +182,7 @@ const TalonForgeApp = ({ user, onLogout }: { user: any; onLogout: () => void }) 
 
         {/* Scrollable Content Area */}
         <main className="flex-1 overflow-y-auto p-8 relative">
-          {activeTab === 'dashboard' && <DashboardPlaceholder sites={sites} user={currentUser} setActiveTab={setActiveTab} />}
+          {activeTab === 'dashboard' && <DashboardPlaceholder sites={sites} user={currentUser} />}
           {activeTab === 'sites' && <InstancesPlaceholder />}
           {activeTab === 'migration' && <PlaceholderView title="Migration Hub" />}
           {activeTab === 'backups' && <PlaceholderView title="Backup Vault" />}
@@ -257,7 +211,7 @@ const TalonForgeApp = ({ user, onLogout }: { user: any; onLogout: () => void }) 
 };
 
 // Temporary placeholder components - we'll replace these with the full versions
-const DashboardPlaceholder = ({ sites, user, setActiveTab }: any) => (
+const DashboardPlaceholder = ({ sites, user }: any) => (
   <div className="space-y-6">
     <div className="flex items-center justify-between">
       <div>
