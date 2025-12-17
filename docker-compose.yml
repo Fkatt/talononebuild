@@ -11,8 +11,8 @@ services:
       - DATABASE_URL=${DATABASE_URL}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - JWT_SECRET=${JWT_SECRET}
-    expose:
-      - "3000"
+    ports:
+      - "3000:3000"
     depends_on:
       - tf-db
     networks:
@@ -29,8 +29,10 @@ services:
   tf-frontend:
     build: ./client
     container_name: talonforge-frontend
-    expose:
-      - "80"
+    environment:
+      - VITE_API_BASE_URL=${VITE_API_BASE_URL:-http://localhost:3000}
+    ports:
+      - "8080:80"
     depends_on:
       - tf-backend
     networks:
