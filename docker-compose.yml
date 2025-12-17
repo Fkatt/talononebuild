@@ -3,7 +3,8 @@
 
 services:
   tf-backend:
-    build: ./server
+    build:
+      context: ./server
     container_name: talonforge-backend
     environment:
       - PORT=3000
@@ -27,11 +28,12 @@ services:
     #   start_period: 40s
 
   tf-frontend:
-    build: ./client
+    build:
+      context: ./client
+      args:
+        - VITE_API_BASE_URL=${VITE_API_BASE_URL:-http://localhost:3001}
     container_name: talonforge-frontend
     environment:
-      - VITE_API_BASE_URL=${VITE_API_BASE_URL:-http://localhost:3001}
-    build_args:
       - VITE_API_BASE_URL=${VITE_API_BASE_URL:-http://localhost:3001}
     ports:
       - "8081:80"
