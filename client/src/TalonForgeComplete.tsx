@@ -831,14 +831,43 @@ const InstanceManagerView = ({ sites, protectedMode, showNotification, setSites 
   const [newBundleName, setNewBundleName] = useState("");
 
   // Add Instance Form State
-  const [newInstance, setNewInstance] = useState({ 
-    name: '', 
-    type: 'talon', 
-    url: '', 
-    vertical: 'Retail', 
-    apiKey: '', 
-    appId: '' 
+  const [newInstance, setNewInstance] = useState({
+    name: '',
+    type: 'talon',
+    url: '',
+    vertical: 'Retail',
+    apiKey: '',
+    appId: ''
   });
+
+  const handleDeleteInstance = async (instanceId) => {
+    try {
+      const token = localStorage.getItem('authToken');
+      if (!token) {
+        showNotification('Authentication required', 'error');
+        return;
+      }
+
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/instances/${instanceId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (response.ok) {
+        // Remove from local state
+        setSites(sites.filter(s => s.id !== instanceId));
+        showNotification('Instance deleted successfully', 'success');
+      } else {
+        const error = await response.json();
+        showNotification(error.message || 'Failed to delete instance', 'error');
+      }
+    } catch (error) {
+      console.error('Failed to delete instance:', error);
+      showNotification('Failed to delete instance', 'error');
+    }
+  };
 
   const getLinkedSiteName = (linkedId, allSites) => {
     const found = allSites.find(s => s.id === linkedId);
@@ -1041,12 +1070,19 @@ const InstanceManagerView = ({ sites, protectedMode, showNotification, setSites 
                              <button className="flex-1 bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 border border-blue-600/20 py-2 px-4 rounded text-sm font-medium transition-colors">
                                Edit Configuration
                              </button>
-                             <button 
-                                onClick={(e) => { e.stopPropagation(); !protectedMode && showNotification("Instance deleted", "error"); }}
+                             <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (!protectedMode) {
+                                    if (confirm(`Are you sure you want to delete "${site.name}"?`)) {
+                                      handleDeleteInstance(site.id);
+                                    }
+                                  }
+                                }}
                                 disabled={protectedMode}
                                 className={`flex items-center justify-center px-4 py-2 rounded text-sm font-medium border transition-colors
-                                  ${protectedMode 
-                                    ? 'bg-slate-800 text-slate-600 border-slate-700 cursor-not-allowed' 
+                                  ${protectedMode
+                                    ? 'bg-slate-800 text-slate-600 border-slate-700 cursor-not-allowed'
                                     : 'bg-red-500/10 text-red-400 border-red-500/20 hover:bg-red-500/20 cursor-pointer'}`}
                               >
                                 {protectedMode ? <Lock size={14} className="mr-2" /> : <Trash2 size={14} className="mr-2" />}
@@ -2120,6 +2156,35 @@ export default function TalonForgeApp({ user, onLogout }: TalonForgeAppProps) {
       }
     } catch (error) {
       console.error('Failed to load instances:', error);
+    }
+  };
+
+  const deleteInstance = async (instanceId) => {
+    try {
+      const token = localStorage.getItem('authToken');
+      if (!token) {
+        showNotification('Authentication required', 'error');
+        return;
+      }
+
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/instances/${instanceId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (response.ok) {
+        // Remove from local state
+        setSites(sites.filter(s => s.id !== instanceId));
+        showNotification('Instance deleted successfully', 'success');
+      } else {
+        const error = await response.json();
+        showNotification(error.message || 'Failed to delete instance', 'error');
+      }
+    } catch (error) {
+      console.error('Failed to delete instance:', error);
+      showNotification('Failed to delete instance', 'error');
     }
   };
 
