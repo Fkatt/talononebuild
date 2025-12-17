@@ -2100,14 +2100,22 @@ export default function TalonForgeApp({ user, onLogout }: TalonForgeAppProps) {
 
   const fetchInstances = async () => {
     try {
+      const token = localStorage.getItem('authToken');
+      if (!token) {
+        console.error('No auth token found');
+        return;
+      }
+
       const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/instances`, {
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${token}`
         }
       });
       if (response.ok) {
         const data = await response.json();
         setSites(data.data || []);
+      } else {
+        console.error('Failed to fetch instances:', response.status);
       }
     } catch (error) {
       console.error('Failed to load instances:', error);
