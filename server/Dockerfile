@@ -1,11 +1,14 @@
 # Backend Dockerfile for TalonForge
 
-FROM node:18-alpine AS build
+FROM node:18-slim AS build
 
 WORKDIR /app
 
 # Set NODE_ENV to development for build stage to install all dependencies
 ENV NODE_ENV=development
+
+# Install OpenSSL for Prisma
+RUN apt-get update -y && apt-get install -y openssl
 
 # Copy package files
 COPY package*.json ./
@@ -23,12 +26,12 @@ RUN npx prisma generate
 RUN npm run build
 
 # Production stage
-FROM node:18-alpine
+FROM node:18-slim
 
 WORKDIR /app
 
-# Install OpenSSL 1.1 compatibility for Prisma
-RUN apk add --no-cache openssl1.1-compat
+# Install OpenSSL for Prisma
+RUN apt-get update -y && apt-get install -y openssl ca-certificates && rm -rf /var/lib/apt/lists/*
 
 # Copy package files
 COPY package*.json ./
