@@ -44,7 +44,7 @@ const App: React.FC = () => {
 // This is the integration of talononeuiv2.html with backend auth
 const TalonForgeApp = ({ user, onLogout }: { user: any; onLogout: () => void }) => {
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [notification, setNotification] = useState<any>(null);
+  const [notification] = useState<any>(null);
   const [sites, setSites] = useState<any[]>([]);
   const [protectedMode] = useState(true);
   // const [aiConfig, setAiConfig] = useState({...}); // Commented out for now
