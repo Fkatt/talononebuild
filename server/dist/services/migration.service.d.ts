@@ -9,6 +9,9 @@ interface MigrateParams {
     userId: number;
     newName?: string;
     copySchema?: boolean;
+    appNames?: {
+        [key: string]: string;
+    };
 }
 export declare const migrate: (params: MigrateParams) => Promise<{
     migrationId: number;

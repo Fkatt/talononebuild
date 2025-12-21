@@ -18,10 +18,11 @@ interface MigrateParams {
   userId: number;
   newName?: string;
   copySchema?: boolean;
+  appNames?: { [key: string]: string }; // Mapping of appId -> newName for multiple apps
 }
 
 export const migrate = async (params: MigrateParams) => {
-  const { sourceId, destId, assets, userId, newName, copySchema = true } = params;
+  const { sourceId, destId, assets, userId, newName, copySchema = true, appNames } = params;
 
   try {
     // Get source and destination instances
@@ -52,7 +53,13 @@ export const migrate = async (params: MigrateParams) => {
     for (const asset of assets) {
       try {
         if (source.type === 'talon') {
-          await migrateTalonAsset(source, dest, asset, newName, copySchema);
+          // Determine the name for this specific asset
+          let assetName = newName;
+          if (appNames && asset.id) {
+            // Use individual name from mapping if available
+            assetName = appNames[asset.id.toString()] || appNames[asset.id] || newName;
+          }
+          await migrateTalonAsset(source, dest, asset, assetName, copySchema);
         } else if (source.type === 'contentful') {
           await migrateContentfulAsset(source, dest, asset);
         }
@@ -414,6 +421,11 @@ async function cloneCoupons(
 
     const coupons = couponsResponse.data.data || [];
     logger.info(`Found ${coupons.length} coupons to clone`);
+
+    // Log the first coupon to see date format
+    if (coupons.length > 0) {
+      logger.info(`Sample source coupon data:`, JSON.stringify(coupons[0], null, 2));
+    }
 
     if (coupons.length === 0) {
       return;

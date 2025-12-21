@@ -9,7 +9,7 @@ const instance_service_1 = require("./instance.service");
 const logger_1 = __importDefault(require("../utils/logger"));
 const axios_1 = __importDefault(require("axios"));
 const migrate = async (params) => {
-    const { sourceId, destId, assets, userId, newName, copySchema = true } = params;
+    const { sourceId, destId, assets, userId, newName, copySchema = true, appNames } = params;
     try {
         const source = await (0, instance_service_1.getInstance)(sourceId, userId);
         const dest = await (0, instance_service_1.getInstance)(destId, userId);
@@ -30,7 +30,11 @@ const migrate = async (params) => {
         for (const asset of assets) {
             try {
                 if (source.type === 'talon') {
-                    await migrateTalonAsset(source, dest, asset, newName, copySchema);
+                    let assetName = newName;
+                    if (appNames && asset.id) {
+                        assetName = appNames[asset.id.toString()] || appNames[asset.id] || newName;
+                    }
+                    await migrateTalonAsset(source, dest, asset, assetName, copySchema);
                 }
                 else if (source.type === 'contentful') {
                     await migrateContentfulAsset(source, dest, asset);
@@ -292,6 +296,9 @@ async function cloneCoupons(source, dest, sourceAppId, sourceCampaignId, destApp
         });
         const coupons = couponsResponse.data.data || [];
         logger_1.default.info(`Found ${coupons.length} coupons to clone`);
+        if (coupons.length > 0) {
+            logger_1.default.info(`Sample source coupon data:`, JSON.stringify(coupons[0], null, 2));
+        }
         if (coupons.length === 0) {
             return;
         }

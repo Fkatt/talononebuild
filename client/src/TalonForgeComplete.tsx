@@ -1761,6 +1761,8 @@ const MigrationView = ({ sites, showNotification }) => {
   const [showSchemaModal, setShowSchemaModal] = useState(false);
   const [schemaDiff, setSchemaDiff] = useState(null);
   const [pendingMigration, setPendingMigration] = useState(null);
+  const [showNamesModal, setShowNamesModal] = useState(false);
+  const [appNames, setAppNames] = useState({});
 
   // Fetch applications when source instance changes
   useEffect(() => {
@@ -1842,8 +1844,21 @@ const MigrationView = ({ sites, showNotification }) => {
       return;
     }
 
-    // If migrating to same instance, require a new name
-    if (sourceInstance === destInstance && !newName.trim()) {
+    // If migrating to same instance with multiple apps, need individual names
+    if (sourceInstance === destInstance && selectedApplications.length > 1 && typeof copySchemaParam !== 'boolean') {
+      // Initialize appNames with empty strings for each selected app
+      const initialNames = {};
+      selectedApplications.forEach(appId => {
+        const app = applications.find(a => a.id === appId);
+        initialNames[appId] = app ? `${app.name} - Copy` : '';
+      });
+      setAppNames(initialNames);
+      setShowNamesModal(true);
+      return;
+    }
+
+    // If migrating to same instance with single app, require a new name
+    if (sourceInstance === destInstance && selectedApplications.length === 1 && !newName.trim() && typeof copySchemaParam !== 'boolean') {
       showNotification('When cloning to the same instance, please provide a new name for the application', 'error');
       return;
     }
@@ -1863,19 +1878,30 @@ const MigrationView = ({ sites, showNotification }) => {
 
     try {
       const token = localStorage.getItem('authToken');
+
+      // Prepare the payload
+      const payload: any = {
+        sourceId: parseInt(sourceInstance, 10),
+        destId: parseInt(destInstance, 10),
+        assets: selectedApplications.map(id => ({ id, type: 'application' })),
+        copySchema: copySchema
+      };
+
+      // If cloning to same instance with multiple apps, send names mapping
+      if (sourceInstance === destInstance && selectedApplications.length > 1) {
+        payload.appNames = appNames;
+      } else if (sourceInstance === destInstance && selectedApplications.length === 1) {
+        // Single app - use newName
+        payload.newName = newName.trim() || undefined;
+      }
+
       const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/migrate`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          sourceId: parseInt(sourceInstance, 10),
-          destId: parseInt(destInstance, 10),
-          assets: selectedApplications.map(id => ({ id, type: 'application' })),
-          newName: newName.trim() || undefined,
-          copySchema: copySchema
-        })
+        body: JSON.stringify(payload)
       });
 
       if (response.ok) {
@@ -2099,6 +2125,83 @@ const MigrationView = ({ sites, showNotification }) => {
                   Copy Schema & Migrate
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Application Names Modal for Multiple Apps */}
+      {showNamesModal && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/90 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 w-[600px] max-h-[80vh] overflow-y-auto shadow-2xl">
+            <h3 className="text-lg font-bold text-white mb-4 flex items-center">
+              <Copy className="mr-2 text-blue-400" size={20} />
+              Name Your Cloned Applications
+            </h3>
+
+            <p className="text-sm text-slate-300 mb-6">
+              Provide a unique name for each cloned application. Default names are suggested based on the original.
+            </p>
+
+            <div className="space-y-4 max-h-[400px] overflow-y-auto">
+              {selectedApplications.map(appId => {
+                const app = applications.find(a => a.id === appId);
+                if (!app) return null;
+
+                return (
+                  <div key={appId} className="bg-slate-900/50 border border-slate-700 rounded-lg p-4">
+                    <div className="flex items-start space-x-3 mb-3">
+                      <Database size={16} className="text-blue-400 flex-shrink-0 mt-1" />
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-slate-200">{app.name}</p>
+                        <p className="text-xs text-slate-500">ID: {appId}</p>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-400 uppercase mb-2">
+                        New Name *
+                      </label>
+                      <input
+                        type="text"
+                        className="w-full bg-slate-900 border border-slate-600 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-slate-500"
+                        placeholder={`${app.name} - Copy`}
+                        value={appNames[appId] || ''}
+                        onChange={(e) => setAppNames({...appNames, [appId]: e.target.value})}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-slate-700">
+              <button
+                onClick={() => {
+                  setShowNamesModal(false);
+                  setAppNames({});
+                }}
+                className="px-4 py-2 text-sm text-slate-400 hover:text-white transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  // Validate all names are filled
+                  const allNamesFilled = selectedApplications.every(appId => appNames[appId]?.trim());
+                  if (!allNamesFilled) {
+                    showNotification('Please provide names for all applications', 'error');
+                    return;
+                  }
+                  setShowNamesModal(false);
+                  // Continue with migration - this will trigger the schema modal
+                  handleMigrate();
+                }}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center"
+                disabled={!selectedApplications.every(appId => appNames[appId]?.trim())}
+              >
+                <ArrowRightLeft size={14} className="mr-2" />
+                Continue to Clone
+              </button>
             </div>
           </div>
         </div>
