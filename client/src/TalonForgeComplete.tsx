@@ -2832,78 +2832,121 @@ const BackupView = ({ backups, protectedMode, sites, showNotification, setBackup
                 </p>
               </div>
 
-              {viewDetailsModal.data && (
-                <div className="space-y-4">
-                  {/* Applications */}
-                  {viewDetailsModal.data.applications && viewDetailsModal.data.applications.length > 0 && (
-                    <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-4">
-                      <h4 className="text-sm font-bold text-white mb-3 flex items-center">
-                        <Server size={16} className="mr-2 text-blue-400" />
-                        Applications ({viewDetailsModal.data.applications.length})
-                      </h4>
-                      <div className="space-y-2">
-                        {viewDetailsModal.data.applications.map((app, idx) => (
-                          <div key={idx} className="bg-slate-800/50 border border-slate-700/50 rounded p-2">
-                            <p className="text-sm font-medium text-slate-200">{app.attributes?.name || app.name || `App ${app.id}`}</p>
-                            <p className="text-xs text-slate-500">ID: {app.id}</p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+              {viewDetailsModal.data && viewDetailsModal.data.applicationDetails && (
+                <div className="space-y-4 max-h-[60vh] overflow-y-auto">
+                  {viewDetailsModal.data.applicationDetails.map((appDetail, appIdx) => {
+                    const app = appDetail.application;
+                    const appName = app.attributes?.name || app.name || `Application ${app.id}`;
+                    const totalCampaigns = appDetail.campaigns?.length || 0;
+                    const totalRules = appDetail.campaigns?.reduce((sum, c) => sum + (c.rulesets?.reduce((rSum, r) => rSum + (r.rules?.length || 0), 0) || 0), 0) || 0;
+                    const totalCoupons = appDetail.campaigns?.reduce((sum, c) => sum + (c.coupons?.length || 0), 0) || 0;
+                    const totalAttributes = appDetail.attributes?.length || 0;
 
-                  {/* Campaigns */}
-                  {viewDetailsModal.data.campaigns && viewDetailsModal.data.campaigns.length > 0 && (
-                    <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-4">
-                      <h4 className="text-sm font-bold text-white mb-3 flex items-center">
-                        <Target size={16} className="mr-2 text-emerald-400" />
-                        Campaigns ({viewDetailsModal.data.campaigns.length})
-                      </h4>
-                      <div className="space-y-2 max-h-[300px] overflow-y-auto">
-                        {viewDetailsModal.data.campaigns.map((campaign, idx) => (
-                          <div key={idx} className="bg-slate-800/50 border border-slate-700/50 rounded p-2">
-                            <p className="text-sm font-medium text-slate-200">{campaign.name}</p>
-                            <p className="text-xs text-slate-500">ID: {campaign.id} • State: {campaign.state}</p>
+                    return (
+                      <div key={appIdx} className="bg-slate-900/50 border border-slate-700 rounded-lg p-4">
+                        {/* Application Header */}
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center">
+                            <Server size={18} className="mr-2 text-blue-400" />
+                            <div>
+                              <h4 className="text-base font-bold text-white">{appName}</h4>
+                              <p className="text-xs text-slate-500">ID: {app.id}</p>
+                            </div>
                           </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                          <div className="flex gap-2 text-xs">
+                            <span className="px-2 py-1 bg-emerald-500/10 text-emerald-400 rounded">{totalCampaigns} campaigns</span>
+                            <span className="px-2 py-1 bg-yellow-500/10 text-yellow-400 rounded">{totalRules} rules</span>
+                            <span className="px-2 py-1 bg-purple-500/10 text-purple-400 rounded">{totalCoupons} coupons</span>
+                          </div>
+                        </div>
 
-                  {/* Rulesets */}
-                  {viewDetailsModal.data.rulesets && viewDetailsModal.data.rulesets.length > 0 && (
-                    <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-4">
-                      <h4 className="text-sm font-bold text-white mb-3 flex items-center">
-                        <Hash size={16} className="mr-2 text-yellow-400" />
-                        Rulesets ({viewDetailsModal.data.rulesets.length})
-                      </h4>
-                      <div className="space-y-2 max-h-[200px] overflow-y-auto">
-                        {viewDetailsModal.data.rulesets.map((ruleset, idx) => (
-                          <div key={idx} className="bg-slate-800/50 border border-slate-700/50 rounded p-2">
-                            <p className="text-xs text-slate-400">Ruleset ID: {ruleset.id} • {ruleset.rules?.length || 0} rules</p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                        {/* Campaigns */}
+                        {appDetail.campaigns && appDetail.campaigns.length > 0 && (
+                          <div className="space-y-2 mt-3 pl-6 border-l-2 border-slate-700">
+                            {appDetail.campaigns.map((campaign, cIdx) => (
+                              <div key={cIdx} className="bg-slate-800/30 border border-slate-700/50 rounded p-3">
+                                <div className="flex items-start justify-between mb-2">
+                                  <div className="flex items-center flex-1">
+                                    <Target size={14} className="mr-2 text-emerald-400 flex-shrink-0" />
+                                    <div>
+                                      <p className="text-sm font-medium text-slate-200">{campaign.name}</p>
+                                      <p className="text-xs text-slate-500">
+                                        ID: {campaign.id} • State: <span className={campaign.state === 'enabled' ? 'text-green-400' : 'text-slate-400'}>{campaign.state}</span>
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
 
-                  {/* Attributes */}
-                  {viewDetailsModal.data.attributes && viewDetailsModal.data.attributes.length > 0 && (
-                    <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-4">
-                      <h4 className="text-sm font-bold text-white mb-3 flex items-center">
-                        <Database size={16} className="mr-2 text-orange-400" />
-                        Attributes ({viewDetailsModal.data.attributes.length})
-                      </h4>
-                      <div className="space-y-2 max-h-[200px] overflow-y-auto">
-                        {viewDetailsModal.data.attributes.map((attr, idx) => (
-                          <div key={idx} className="bg-slate-800/50 border border-slate-700/50 rounded p-2">
-                            <p className="text-sm font-medium text-slate-200">{attr.name}</p>
-                            <p className="text-xs text-slate-500">{attr.entity} • {attr.dataType}</p>
+                                {/* Rules */}
+                                {campaign.rulesets && campaign.rulesets.length > 0 && (
+                                  <div className="mt-2 pl-4 border-l border-slate-600">
+                                    <p className="text-xs text-slate-400 mb-1 flex items-center">
+                                      <Hash size={12} className="mr-1 text-yellow-400" />
+                                      {campaign.rulesets.reduce((sum, r) => sum + (r.rules?.length || 0), 0)} Rules
+                                    </p>
+                                  </div>
+                                )}
+
+                                {/* Coupons */}
+                                {campaign.coupons && campaign.coupons.length > 0 && (
+                                  <div className="mt-2 pl-4 border-l border-slate-600">
+                                    <p className="text-xs text-slate-400 mb-1 flex items-center">
+                                      <Copy size={12} className="mr-1 text-purple-400" />
+                                      {campaign.coupons.length} Coupons
+                                    </p>
+                                    <div className="flex flex-wrap gap-1 mt-1">
+                                      {campaign.coupons.slice(0, 5).map((coupon, cpIdx) => (
+                                        <span key={cpIdx} className="text-[10px] px-1.5 py-0.5 bg-purple-500/10 text-purple-300 rounded font-mono">
+                                          {coupon.value}
+                                        </span>
+                                      ))}
+                                      {campaign.coupons.length > 5 && (
+                                        <span className="text-[10px] px-1.5 py-0.5 bg-slate-700 text-slate-400 rounded">
+                                          +{campaign.coupons.length - 5} more
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Referrals */}
+                                {campaign.referrals && campaign.referrals.length > 0 && (
+                                  <div className="mt-2 pl-4 border-l border-slate-600">
+                                    <p className="text-xs text-slate-400 flex items-center">
+                                      <LinkIcon size={12} className="mr-1 text-cyan-400" />
+                                      {campaign.referrals.length} Referral Codes
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
                           </div>
-                        ))}
+                        )}
+
+                        {/* Attributes */}
+                        {appDetail.attributes && appDetail.attributes.length > 0 && (
+                          <div className="mt-3 pl-6 border-l-2 border-slate-700">
+                            <p className="text-xs text-slate-400 mb-2 flex items-center">
+                              <Database size={12} className="mr-1 text-orange-400" />
+                              {appDetail.attributes.length} Custom Attributes
+                            </p>
+                            <div className="grid grid-cols-2 gap-1">
+                              {appDetail.attributes.slice(0, 6).map((attr, attrIdx) => (
+                                <span key={attrIdx} className="text-[10px] px-1.5 py-0.5 bg-orange-500/10 text-orange-300 rounded truncate">
+                                  {attr.entity}.{attr.name}
+                                </span>
+                              ))}
+                              {appDetail.attributes.length > 6 && (
+                                <span className="text-[10px] px-1.5 py-0.5 bg-slate-700 text-slate-400 rounded">
+                                  +{appDetail.attributes.length - 6} more
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  )}
+                    );
+                  })}
                 </div>
               )}
 
