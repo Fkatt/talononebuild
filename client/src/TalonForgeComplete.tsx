@@ -1828,7 +1828,10 @@ const MigrationView = ({ sites, showNotification }) => {
     }
   };
 
-  const handleMigrate = async (copySchema = false) => {
+  const handleMigrate = async (copySchemaParam?: boolean | any) => {
+    // Handle the parameter - could be boolean from modal or event from button click
+    const copySchema = typeof copySchemaParam === 'boolean' ? copySchemaParam : false;
+
     if (selectedApplications.length === 0) {
       showNotification('Please select at least one application', 'error');
       return;
@@ -1846,7 +1849,7 @@ const MigrationView = ({ sites, showNotification }) => {
     }
 
     // If this is the initial call (not from schema confirmation), check schema
-    if (!copySchema && pendingMigration === null) {
+    if (typeof copySchemaParam !== 'boolean' && pendingMigration === null) {
       // Store the migration request
       setPendingMigration({ copySchema: false });
 
