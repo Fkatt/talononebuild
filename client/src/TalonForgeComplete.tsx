@@ -1,20 +1,20 @@
 // @ts-nocheck
 import React, { useState, useEffect } from 'react';
-import { 
-  LayoutDashboard, 
-  Server, 
-  ArrowRightLeft, 
-  Archive, 
-  BrainCircuit, 
-  ShieldAlert, 
-  Settings, 
-  Plus, 
-  Copy, 
-  Trash2, 
-  Folder, 
-  FileJson, 
-  CheckCircle2, 
-  AlertTriangle, 
+import {
+  LayoutDashboard,
+  Server,
+  ArrowRightLeft,
+  Archive,
+  BrainCircuit,
+  ShieldAlert,
+  Settings,
+  Plus,
+  Copy,
+  Trash2,
+  Folder,
+  FileJson,
+  CheckCircle2,
+  AlertTriangle,
   Search,
   Lock,
   Unlock,
@@ -25,6 +25,8 @@ import {
   ChevronDown,
   ChevronRight,
   UploadCloud,
+  Upload,
+  Download,
   X,
   Database,
   Award,
@@ -43,7 +45,9 @@ import {
   ThumbsUp,
   ThumbsDown,
   Activity,
-  Hash
+  Hash,
+  Briefcase,
+  Target
 } from 'lucide-react';
 
 // --- Mock Data & Constants ---
@@ -1657,50 +1661,254 @@ const MigrationView = ({ sites, showNotification }) => {
 };
 
 const BackupView = ({ backups, protectedMode, sites, showNotification, setBackups }) => {
+  // Filter for Talon instances only (we can't backup Contentful)
+  const talonInstances = sites.filter(s => s.type === 'talon');
+
   const [showModal, setShowModal] = useState(false);
-  const [selectedSite, setSelectedSite] = useState(sites.length > 0 ? sites[0].id : "");
-  const [activeVertical, setActiveVertical] = useState(Object.keys(backups)[0]);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [selectedSite, setSelectedSite] = useState(talonInstances.length > 0 ? talonInstances[0].id : "");
+  const [activeVertical, setActiveVertical] = useState('All Backups');
   const [newGroupName, setNewGroupName] = useState("");
   const [isAddingGroup, setIsAddingGroup] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [realBackups, setRealBackups] = useState([]);
+  const [restoreModal, setRestoreModal] = useState(null);
+  const [verticalCounts, setVerticalCounts] = useState({});
+
+  // Fetch backup counts from API
+  useEffect(() => {
+    fetchVerticalCounts();
+  }, []);
+
+  // Fetch backups from API when vertical changes
+  useEffect(() => {
+    fetchBackups();
+  }, [activeVertical]);
 
   // Update selected site if sites changes and current selection is invalid
   useEffect(() => {
-    if (sites.length > 0 && (!selectedSite || !sites.find(s => s.id == selectedSite))) {
-      setSelectedSite(sites[0].id);
+    if (talonInstances.length > 0 && (!selectedSite || !talonInstances.find(s => s.id == selectedSite))) {
+      setSelectedSite(talonInstances[0].id);
     }
   }, [sites]);
 
-  const handleAddGroup = () => {
-    if (newGroupName && !backups[newGroupName]) {
-      const updated = { ...backups, [newGroupName]: [] };
-      if (setBackups) setBackups(updated);
-      setActiveVertical(newGroupName);
-      setIsAddingGroup(false);
-      setNewGroupName("");
+  const fetchVerticalCounts = async () => {
+    try {
+      const token = localStorage.getItem('authToken');
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/backups/stats/counts`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setVerticalCounts(data.data || {});
+      }
+    } catch (error) {
+      console.error('Failed to fetch vertical counts:', error);
     }
   };
 
-  const handleCreateSnapshot = () => {
-    // Determine type based on selectedSite
-    const siteObj = sites.find(s => s.id == selectedSite);
-    const type = siteObj ? siteObj.type : 'talon';
-    
-    const newFile = {
-      id: `bk-${Date.now()}`,
-      type: type,
-      name: `${siteObj?.name.replace(/\s+/g, '-')}-Snapshot.json`,
-      date: new Date().toISOString().split('T')[0],
-      size: '2.4 MB'
-    };
+  const fetchBackups = async () => {
+    try {
+      const token = localStorage.getItem('authToken');
+      const vertical = activeVertical === 'All Backups' ? '' : activeVertical;
+      const url = vertical
+        ? `${import.meta.env.VITE_API_BASE_URL}/backups?vertical=${encodeURIComponent(vertical)}`
+        : `${import.meta.env.VITE_API_BASE_URL}/backups`;
 
-    const updatedBackups = {
-      ...backups,
-      [activeVertical]: [newFile, ...backups[activeVertical]]
-    };
-    
-    if (setBackups) setBackups(updatedBackups);
-    setShowModal(false);
-    showNotification("Snapshot created successfully!");
+      const response = await fetch(url, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setRealBackups(data.data || []);
+      }
+    } catch (error) {
+      console.error('Failed to fetch backups:', error);
+    }
+  };
+
+  const handleAddGroup = async () => {
+    if (!newGroupName.trim()) return;
+
+    try {
+      const token = localStorage.getItem('authToken');
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/verticals`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ name: newGroupName })
+      });
+
+      if (response.ok) {
+        setIsAddingGroup(false);
+        setNewGroupName("");
+        await fetchVerticalCounts();
+        showNotification('Vertical group created successfully!', 'success');
+      }
+    } catch (error) {
+      console.error('Failed to create vertical:', error);
+      showNotification('Failed to create vertical group', 'error');
+    }
+  };
+
+  const handleCreateSnapshot = async () => {
+    setLoading(true);
+    try {
+      const siteObj = sites.find(s => s.id == selectedSite);
+      const token = localStorage.getItem('authToken');
+
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/backups/create`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          instanceId: parseInt(selectedSite, 10),
+          name: `${siteObj?.name} - ${new Date().toLocaleDateString()}`
+        })
+      });
+
+      if (response.ok) {
+        showNotification("Snapshot created successfully!", 'success');
+        setShowModal(false);
+        await fetchBackups();
+        await fetchVerticalCounts();
+      } else {
+        const error = await response.json();
+        showNotification(error.error?.message || 'Failed to create backup', 'error');
+      }
+    } catch (error) {
+      console.error('Failed to create backup:', error);
+      showNotification('Failed to create backup: ' + error.message, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUploadBackup = async (file) => {
+    try {
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        try {
+          const backupData = JSON.parse(e.target.result);
+          const token = localStorage.getItem('authToken');
+
+          const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/backups/upload`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              name: file.name.replace('.json', ''),
+              data: backupData,
+              vertical: 'Uploaded'
+            })
+          });
+
+          if (response.ok) {
+            showNotification('Backup uploaded successfully!', 'success');
+            setShowUploadModal(false);
+            await fetchBackups();
+            await fetchVerticalCounts();
+          } else {
+            const error = await response.json();
+            showNotification(error.error?.message || 'Failed to upload backup', 'error');
+          }
+        } catch (parseError) {
+          showNotification('Invalid JSON file', 'error');
+        }
+      };
+      reader.readAsText(file);
+    } catch (error) {
+      console.error('Failed to upload backup:', error);
+      showNotification('Failed to upload backup', 'error');
+    }
+  };
+
+  const handleDownloadBackup = async (backupId, backupName) => {
+    try {
+      const token = localStorage.getItem('authToken');
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/backups/${backupId}/download`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `backup-${backupName.replace(/[^a-z0-9]/gi, '_')}-${backupId}.json`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        showNotification('Backup downloaded successfully!', 'success');
+      }
+    } catch (error) {
+      console.error('Failed to download backup:', error);
+      showNotification('Failed to download backup', 'error');
+    }
+  };
+
+  const handleRestoreBackupConfirm = async () => {
+    if (!restoreModal.targetInstanceId || !restoreModal.newName) {
+      showNotification('Please fill in all required fields', 'error');
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('authToken');
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/backups/restore`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          backupId: restoreModal.backupId,
+          targetInstanceId: parseInt(restoreModal.targetInstanceId, 10),
+          newName: restoreModal.newName
+        })
+      });
+
+      if (response.ok) {
+        showNotification('Backup restored successfully!', 'success');
+        setRestoreModal(null);
+      } else {
+        const error = await response.json();
+        console.error('Restore error response:', error);
+        showNotification(error.error?.message || 'Failed to restore backup', 'error');
+      }
+    } catch (error) {
+      console.error('Failed to restore backup:', error);
+      showNotification('Failed to restore backup: ' + error.message, 'error');
+    }
+  };
+
+  const handleDeleteBackup = async (backupId) => {
+    if (!window.confirm('Are you sure you want to delete this backup?')) return;
+
+    try {
+      const token = localStorage.getItem('authToken');
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/backups/${backupId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (response.ok) {
+        showNotification('Backup deleted successfully!', 'success');
+        await fetchBackups();
+        await fetchVerticalCounts();
+      }
+    } catch (error) {
+      console.error('Failed to delete backup:', error);
+      showNotification('Failed to delete backup', 'error');
+    }
   };
 
   return (
@@ -1710,12 +1918,20 @@ const BackupView = ({ backups, protectedMode, sites, showNotification, setBackup
           <h2 className="text-2xl font-bold text-white">Backup Vault</h2>
           <p className="text-slate-400 text-sm">Snapshots organized by vertical hierarchy.</p>
         </div>
-        <button 
-          onClick={() => setShowModal(true)}
-          className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center transition-colors"
-        >
-          <Archive size={16} className="mr-2" /> Create Snapshot
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowUploadModal(true)}
+            className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center transition-colors"
+          >
+            <Upload size={16} className="mr-2" /> Upload Backup
+          </button>
+          <button
+            onClick={() => setShowModal(true)}
+            className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center transition-colors"
+          >
+            <Archive size={16} className="mr-2" /> Create Snapshot
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-12 gap-6 h-[500px]">
@@ -1723,15 +1939,28 @@ const BackupView = ({ backups, protectedMode, sites, showNotification, setBackup
         <div className="col-span-3 bg-slate-800/50 rounded-xl border border-slate-700/50 p-4">
           <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">Verticals</h3>
           <div className="space-y-1">
-            {Object.keys(backups).map(vertical => (
-              <button 
-                key={vertical} 
+            {/* All Backups option */}
+            <button
+              key="all-backups"
+              onClick={() => setActiveVertical('All Backups')}
+              className={`w-full flex items-center p-2 rounded transition-colors text-left group ${activeVertical === 'All Backups' ? 'bg-blue-600/20 text-blue-400 border border-blue-600/30' : 'hover:bg-slate-700/50 text-slate-300 hover:text-white border border-transparent'}`}
+            >
+              <Database size={16} className={`mr-2 ${activeVertical === 'All Backups' ? 'text-blue-400' : 'text-slate-500'}`} />
+              <span className="text-sm font-medium">All Backups</span>
+              <span className="ml-auto text-xs bg-slate-900 text-slate-500 px-1.5 rounded">
+                {Object.values(verticalCounts).reduce((sum, count) => sum + count, 0)}
+              </span>
+            </button>
+
+            {Object.keys(verticalCounts).map(vertical => (
+              <button
+                key={vertical}
                 onClick={() => setActiveVertical(vertical)}
                 className={`w-full flex items-center p-2 rounded transition-colors text-left group ${activeVertical === vertical ? 'bg-blue-600/20 text-blue-400 border border-blue-600/30' : 'hover:bg-slate-700/50 text-slate-300 hover:text-white border border-transparent'}`}
               >
                 <Folder size={16} className={`mr-2 ${activeVertical === vertical ? 'text-blue-400' : 'text-slate-500'}`} />
                 <span className="text-sm font-medium">{vertical}</span>
-                <span className="ml-auto text-xs bg-slate-900 text-slate-500 px-1.5 rounded">{backups[vertical].length}</span>
+                <span className="ml-auto text-xs bg-slate-900 text-slate-500 px-1.5 rounded">{verticalCounts[vertical]}</span>
               </button>
             ))}
             
@@ -1771,33 +2000,45 @@ const BackupView = ({ backups, protectedMode, sites, showNotification, setBackup
                <thead className="bg-slate-900/50 text-xs uppercase font-semibold text-slate-500">
                  <tr>
                    <th className="px-4 py-3 rounded-l-lg">Filename</th>
-                   <th className="px-4 py-3">Type</th>
+                   <th className="px-4 py-3">Vertical</th>
                    <th className="px-4 py-3">Date Created</th>
                    <th className="px-4 py-3">Size</th>
                    <th className="px-4 py-3 text-right rounded-r-lg">Actions</th>
                  </tr>
                </thead>
                <tbody className="divide-y divide-slate-700/50">
-                 {backups[activeVertical] && backups[activeVertical].length > 0 ? (
-                   backups[activeVertical].map(file => (
-                     <tr key={file.id} className="group hover:bg-slate-700/20 transition-colors">
+                 {realBackups && realBackups.length > 0 ? (
+                   realBackups.map(backup => (
+                     <tr key={backup.id} className="group hover:bg-slate-700/20 transition-colors">
                        <td className="px-4 py-3 font-medium text-slate-200 flex items-center">
-                         {file.type === 'talon' ? <FileJson size={16} className="mr-3 text-emerald-500" /> : <Layout size={16} className="mr-3 text-yellow-500" />}
-                         {file.name}
+                         <FileJson size={16} className="mr-3 text-emerald-500" />
+                         {backup.name}
                        </td>
                        <td className="px-4 py-3">
-                         <span className={`text-[10px] px-1.5 py-0.5 rounded border ${file.type === 'talon' ? 'border-emerald-500/30 text-emerald-400' : 'border-yellow-500/30 text-yellow-400'}`}>
-                           {file.type.toUpperCase()}
+                         <span className="text-[10px] px-1.5 py-0.5 rounded border border-blue-500/30 text-blue-400">
+                           {backup.vertical || 'N/A'}
                          </span>
                        </td>
-                       <td className="px-4 py-3">{file.date}</td>
-                       <td className="px-4 py-3 font-mono text-xs">{file.size}</td>
+                       <td className="px-4 py-3">{new Date(backup.createdAt).toLocaleString()}</td>
+                       <td className="px-4 py-3 font-mono text-xs">{(backup.size / 1024).toFixed(1)} KB</td>
                        <td className="px-4 py-3 text-right">
                          <div className="flex justify-end space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                           <button className="p-1 hover:bg-slate-700 rounded text-blue-400" title="Restore">
+                           <button
+                             onClick={() => handleDownloadBackup(backup.id, backup.name)}
+                             className="p-1 hover:bg-slate-700 rounded text-green-400"
+                             title="Download"
+                           >
+                             <Download size={14} />
+                           </button>
+                           <button
+                             onClick={() => setRestoreModal({ backupId: backup.id, backupName: backup.name, targetInstanceId: '', newName: '' })}
+                             className="p-1 hover:bg-slate-700 rounded text-blue-400"
+                             title="Restore"
+                           >
                              <RefreshCw size={14} />
                            </button>
-                           <button 
+                           <button
+                             onClick={() => handleDeleteBackup(backup.id)}
                              disabled={protectedMode}
                              className={`p-1 rounded ${protectedMode ? 'text-slate-600 cursor-not-allowed' : 'hover:bg-red-500/20 text-red-400 cursor-pointer'}`}
                              title="Delete"
@@ -1836,14 +2077,20 @@ const BackupView = ({ backups, protectedMode, sites, showNotification, setBackup
             
             <div className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Select Instance</label>
-                <select 
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  value={selectedSite}
-                  onChange={(e) => setSelectedSite(e.target.value)}
-                >
-                  {sites.map(s => <option key={s.id} value={s.id}>{s.name} ({s.type})</option>)}
-                </select>
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Select Talon Instance</label>
+                {talonInstances.length > 0 ? (
+                  <select
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    value={selectedSite}
+                    onChange={(e) => setSelectedSite(e.target.value)}
+                  >
+                    {talonInstances.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                ) : (
+                  <div className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-slate-500 text-sm">
+                    No Talon.One instances available. Please add a Talon instance first.
+                  </div>
+                )}
               </div>
 
               <div>
@@ -1853,7 +2100,7 @@ const BackupView = ({ backups, protectedMode, sites, showNotification, setBackup
                     <input type="radio" name="scope" className="text-emerald-500 focus:ring-emerald-500" defaultChecked />
                     <div className="ml-3">
                       <span className="block text-sm font-medium text-white">Full Instance Backup</span>
-                      <span className="block text-xs text-slate-400">Includes all rules, branding, and assets.</span>
+                      <span className="block text-xs text-slate-400">Includes all apps, campaigns, rules, coupons, and attributes.</span>
                     </div>
                   </label>
                   <label className="flex items-center p-3 border border-slate-700 bg-slate-900/50 rounded-lg cursor-pointer opacity-70">
@@ -1866,12 +2113,125 @@ const BackupView = ({ backups, protectedMode, sites, showNotification, setBackup
                 </div>
               </div>
 
-              <button 
+              <button
                 onClick={handleCreateSnapshot}
-                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-2.5 rounded-lg mt-2 transition-colors"
+                disabled={loading || talonInstances.length === 0}
+                className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-600 disabled:cursor-not-allowed text-white font-medium py-2.5 rounded-lg mt-2 transition-colors"
               >
-                Generate Snapshot
+                {loading ? 'Creating...' : 'Generate Snapshot'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Upload Backup Modal */}
+      {showUploadModal && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 w-[400px] shadow-2xl">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-bold text-white flex items-center">
+                <Upload className="mr-2 text-blue-400" size={20} /> Upload Backup
+              </h3>
+              <button onClick={() => setShowUploadModal(false)} className="text-slate-500 hover:text-white">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Select JSON Backup File</label>
+                <input
+                  type="file"
+                  accept=".json"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      handleUploadBackup(file);
+                    }
+                  }}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white file:mr-4 file:py-1 file:px-3 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-500 file:cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3">
+                <p className="text-xs text-blue-200">
+                  Upload a backup JSON file previously downloaded from this system or exported from another Talon.One instance.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Restore Modal */}
+      {restoreModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 w-[500px] shadow-2xl">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-bold text-white flex items-center">
+                <RefreshCw className="mr-2 text-blue-400" size={20} /> Restore Backup
+              </h3>
+              <button onClick={() => setRestoreModal(null)} className="text-slate-500 hover:text-white">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3">
+                <p className="text-sm text-blue-200">
+                  Restoring: <span className="font-semibold">{restoreModal.backupName}</span>
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Restore To Talon Instance</label>
+                <select
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={restoreModal.targetInstanceId || ''}
+                  onChange={(e) => setRestoreModal({ ...restoreModal, targetInstanceId: e.target.value })}
+                >
+                  <option value="">Select instance...</option>
+                  {talonInstances.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">New Application Name</label>
+                <input
+                  type="text"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Enter new application name..."
+                  value={restoreModal.newName || ''}
+                  onChange={(e) => setRestoreModal({ ...restoreModal, newName: e.target.value })}
+                />
+                <p className="text-xs text-slate-500 mt-1">Provide a unique name to avoid overwriting existing applications</p>
+              </div>
+
+              <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3">
+                <div className="flex items-start space-x-2">
+                  <AlertTriangle size={16} className="text-yellow-400 flex-shrink-0 mt-0.5" />
+                  <p className="text-xs text-yellow-200">
+                    The system will check if an application with this name already exists before restoring.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => setRestoreModal(null)}
+                  className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-medium py-2.5 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handleRestoreBackupConfirm()}
+                  disabled={!restoreModal.targetInstanceId || !restoreModal.newName}
+                  className="flex-1 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-600 disabled:cursor-not-allowed text-white font-medium py-2.5 rounded-lg transition-colors"
+                >
+                  Restore
+                </button>
+              </div>
             </div>
           </div>
         </div>

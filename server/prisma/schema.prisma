@@ -35,6 +35,8 @@ model Instance {
   url                  String
   encryptedCredentials String   @db.Text // Stores IV:ciphertext format
   bundleId             String?  // For grouping instances into "Gigastores"
+  vertical             String?  // Industry vertical
+  status               String   @default("online") // 'online', 'offline', 'error'
   userId               Int
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
@@ -63,12 +65,15 @@ model SystemSettings {
 model Backup {
   id         Int      @id @default(autoincrement())
   name       String
-  instanceId Int      // Reference to the instance that was backed up
+  instanceId Int?     // Reference to the instance that was backed up (optional for uploaded backups)
   data       Json     @db.JsonB // The actual backup data
+  size       Int      @default(0) // Size of backup data in bytes
+  vertical   String?  // Industry vertical for filtering
   createdAt  DateTime @default(now())
 
   @@map("backups")
   @@index([instanceId])
+  @@index([vertical])
 }
 
 // MigrationLog model - Track migration history
@@ -98,4 +103,14 @@ model AIFeedback {
   createdAt DateTime @default(now())
 
   @@map("ai_feedback")
+}
+
+// Vertical model - Custom industry verticals
+model Vertical {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("verticals")
 }

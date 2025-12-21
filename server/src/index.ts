@@ -43,6 +43,7 @@ import migrationRoutes from './routes/migration.routes';
 import backupRoutes from './routes/backup.routes';
 import aiRoutes from './routes/ai.routes';
 import adminRoutes from './routes/admin.routes';
+import verticalRoutes from './routes/vertical.routes';
 
 // Register routes
 app.use('/auth', authRoutes);
@@ -51,6 +52,7 @@ app.use('/migrate', migrationRoutes);
 app.use('/backups', backupRoutes);
 app.use('/ai', aiRoutes);
 app.use('/admin', adminRoutes);
+app.use('/verticals', verticalRoutes);
 
 // Error handling middleware (will be enhanced in Phase 2)
 app.use((err: Error, _req: Request, res: Response, _next: express.NextFunction) => {
@@ -75,12 +77,18 @@ app.use((_req: Request, res: Response) => {
   });
 });
 
+// Import seeding functions
+import { seedDefaultVerticals } from './services/vertical.service';
+
 // Start server
 const PORT = config.server.port;
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`🚀 TalonForge API Server running on port ${PORT}`);
   console.log(`📝 Environment: ${config.server.nodeEnv}`);
   console.log(`🔗 Health check: http://localhost:${PORT}/health`);
+
+  // Seed default data
+  await seedDefaultVerticals();
 });
 
 export default app;

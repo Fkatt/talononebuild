@@ -6,12 +6,12 @@ services:
     build:
       context: ./server
     container_name: talonforge-backend
+    env_file:
+      - .env
     environment:
       - PORT=3000
       - NODE_ENV=production
-      - DATABASE_URL=${DATABASE_URL}
-      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
-      - JWT_SECRET=${JWT_SECRET}
+      - DATABASE_URL=postgresql://user:pass@tf-db:5432/talonforge
     ports:
       - "3001:3000"
     depends_on:
@@ -48,6 +48,8 @@ services:
   tf-db:
     image: postgres:15-alpine
     container_name: talonforge-db
+    ports:
+      - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     environment:

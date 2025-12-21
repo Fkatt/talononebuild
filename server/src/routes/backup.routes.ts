@@ -9,20 +9,23 @@ import {
   listBackups,
   getBackup,
   deleteBackup,
+  getBackupCountsByVertical,
 } from '../services/backup.service';
 import { successResponse, errorResponse, ErrorCodes } from '../utils/response';
 import logger from '../utils/logger';
+import prisma from '../models/prisma';
 
 const router = Router();
 
 // All routes require authentication
 router.use(authenticateToken);
 
-// GET /backups - List all backups
+// GET /backups - List all backups (optional vertical filter)
 router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const userId = req.user!.id;
-    const backups = await listBackups(userId);
+    const vertical = req.query.vertical as string | undefined;
+    const backups = await listBackups(userId, vertical);
     res.json(successResponse(backups));
   } catch (error) {
     logger.error('List backups error:', error);
@@ -30,6 +33,22 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
       errorResponse(
         ErrorCodes.INTERNAL_ERROR,
         error instanceof Error ? error.message : 'Failed to list backups'
+      )
+    );
+  }
+});
+
+// GET /backups/stats/counts - Get backup counts by vertical
+router.get('/stats/counts', async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const counts = await getBackupCountsByVertical();
+    res.json(successResponse(counts));
+  } catch (error) {
+    logger.error('Get backup counts error:', error);
+    res.status(500).json(
+      errorResponse(
+        ErrorCodes.INTERNAL_ERROR,
+        error instanceof Error ? error.message : 'Failed to get backup counts'
       )
     );
   }
@@ -87,13 +106,13 @@ router.post('/create', async (req: AuthRequest, res: Response): Promise<void> =>
 router.post('/restore', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const userId = req.user!.id;
-    const { backupId, targetInstanceId } = req.body;
+    const { backupId, targetInstanceId, newName } = req.body;
 
-    if (!backupId || !targetInstanceId) {
+    if (!backupId || !targetInstanceId || !newName) {
       res.status(400).json(
         errorResponse(
           ErrorCodes.VALIDATION_ERROR,
-          'Missing required fields: backupId, targetInstanceId'
+          'Missing required fields: backupId, targetInstanceId, newName'
         )
       );
       return;
@@ -103,6 +122,7 @@ router.post('/restore', async (req: AuthRequest, res: Response): Promise<void> =
       backupId,
       targetInstanceId,
       userId,
+      newName,
     });
 
     res.json(successResponse(result));
@@ -112,6 +132,79 @@ router.post('/restore', async (req: AuthRequest, res: Response): Promise<void> =
       errorResponse(
         ErrorCodes.INTERNAL_ERROR,
         error instanceof Error ? error.message : 'Failed to restore backup'
+      )
+    );
+  }
+});
+
+// GET /backups/:id/download - Download backup as JSON file
+router.get('/:id/download', async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const backupId = parseInt(req.params.id!, 10);
+    const backup = await getBackup(backupId);
+
+    // Set headers for file download
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename="backup-${backup.name.replace(/[^a-z0-9]/gi, '_')}-${backup.id}.json"`);
+
+    // Send the backup data as JSON
+    res.send(JSON.stringify(backup.data, null, 2));
+  } catch (error) {
+    logger.error('Download backup error:', error);
+    res.status(500).json(
+      errorResponse(
+        ErrorCodes.INTERNAL_ERROR,
+        error instanceof Error ? error.message : 'Failed to download backup'
+      )
+    );
+  }
+});
+
+// POST /backups/upload - Upload backup from JSON file
+router.post('/upload', async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const { name, data, instanceId, vertical } = req.body;
+
+    if (!name || !data) {
+      res.status(400).json(
+        errorResponse(ErrorCodes.VALIDATION_ERROR, 'Missing required fields: name, data')
+      );
+      return;
+    }
+
+    // Calculate size of backup data
+    const backupSize = JSON.stringify(data).length;
+
+    // Create backup record
+    const backup = await prisma.backup.create({
+      data: {
+        name,
+        instanceId: instanceId ? parseInt(instanceId.toString(), 10) : undefined,
+        data,
+        size: backupSize,
+        vertical: vertical || 'Uploaded',
+      },
+    });
+
+    logger.info(`Uploaded backup: ${backup.name} (${backupSize} bytes) for vertical: ${backup.vertical}`);
+
+    res.status(201).json(
+      successResponse({
+        id: backup.id,
+        name: backup.name,
+        instanceId: backup.instanceId,
+        createdAt: backup.createdAt,
+        size: backup.size,
+        vertical: backup.vertical,
+      })
+    );
+  } catch (error) {
+    logger.error('Upload backup error:', error);
+    res.status(500).json(
+      errorResponse(
+        ErrorCodes.INTERNAL_ERROR,
+        error instanceof Error ? error.message : 'Failed to upload backup'
       )
     );
   }

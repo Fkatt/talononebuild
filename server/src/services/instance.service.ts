@@ -21,6 +21,7 @@ interface CreateInstanceData {
   url: string;
   credentials: InstanceCredentials;
   bundleId?: string;
+  vertical?: string;
   userId: number;
 }
 
@@ -30,6 +31,7 @@ interface UpdateInstanceData {
   url?: string;
   credentials?: InstanceCredentials;
   bundleId?: string;
+  vertical?: string;
 }
 
 interface ConnectionTestParams {
@@ -53,6 +55,8 @@ export const getUserInstances = async (userId: number) => {
     region: instance.region,
     url: instance.url,
     bundleId: instance.bundleId,
+    vertical: instance.vertical,
+    status: instance.status,
     createdAt: instance.createdAt,
     updatedAt: instance.updatedAt,
   }));
@@ -81,6 +85,7 @@ export const getInstance = async (instanceId: number, userId: number) => {
     region: instance.region,
     url: instance.url,
     bundleId: instance.bundleId,
+    vertical: instance.vertical,
     credentials: decryptedCredentials,
     createdAt: instance.createdAt,
     updatedAt: instance.updatedAt,
@@ -100,6 +105,7 @@ export const createInstance = async (data: CreateInstanceData) => {
       url: data.url,
       encryptedCredentials,
       bundleId: data.bundleId,
+      vertical: data.vertical,
       userId: data.userId,
     },
   });
@@ -113,6 +119,8 @@ export const createInstance = async (data: CreateInstanceData) => {
     region: instance.region,
     url: instance.url,
     bundleId: instance.bundleId,
+    vertical: instance.vertical,
+    status: instance.status,
     createdAt: instance.createdAt,
   };
 };
@@ -138,6 +146,7 @@ export const updateInstance = async (
     region: data.region,
     url: data.url,
     bundleId: data.bundleId,
+    vertical: data.vertical,
   };
 
   // Encrypt new credentials if provided
@@ -159,6 +168,8 @@ export const updateInstance = async (
     region: updated.region,
     url: updated.url,
     bundleId: updated.bundleId,
+    vertical: updated.vertical,
+    status: updated.status,
     updatedAt: updated.updatedAt,
   };
 };
@@ -185,23 +196,42 @@ export const deleteInstance = async (instanceId: number, userId: number) => {
 // Test connection to Talon.One or Contentful instance
 export const testConnection = async (
   params: ConnectionTestParams
-): Promise<{ success: boolean; error?: string }> => {
+): Promise<{ success: boolean; error?: string; applications?: any[] }> => {
   const { type, url, credentials } = params;
 
   try {
     if (type === 'talon') {
       // Test Talon.One Management API connection
-      // Talon.One uses Bearer token authentication
-      const response = await axios.get(`${url}/v1/applications`, {
-        headers: {
-          Authorization: `Bearer ${credentials.apiKey}`,
-        },
-        timeout: 10000,
-      });
+      // Use ManagementKey-v1 prefix for authentication
+      // First try to get account info as a basic permission check
+      let response;
+      try {
+        response = await axios.get(`${url}/v1/applications`, {
+          headers: {
+            Authorization: `ManagementKey-v1 ${credentials.apiKey}`,
+          },
+          timeout: 10000,
+        });
+      } catch (appError: any) {
+        // If applications endpoint fails, try account endpoint as fallback
+        logger.warn(`Applications endpoint failed: ${appError.response?.data?.message || appError.message}`);
+        response = await axios.get(`${url}/v1/accounts`, {
+          headers: {
+            Authorization: `ManagementKey-v1 ${credentials.apiKey}`,
+          },
+          timeout: 10000,
+        });
+      }
 
       if (response.status === 200) {
         logger.info('Talon.One connection test successful');
-        return { success: true };
+        // Extract application data from response
+        const applications = response.data?.data?.map((app: any) => ({
+          id: app.id,
+          name: app.attributes?.name || `Application ${app.id}`,
+        })) || [];
+
+        return { success: true, applications };
       }
     } else if (type === 'contentful') {
       // Test Contentful Management API connection
