@@ -1831,8 +1831,9 @@ const MigrationView = ({ sites, showNotification }) => {
   };
 
   const handleMigrate = async (copySchemaParam?: boolean | any) => {
-    // Handle the parameter - could be boolean from modal or event from button click
+    // Handle the parameter - could be boolean from modal, string marker, or event from button click
     const copySchema = typeof copySchemaParam === 'boolean' ? copySchemaParam : false;
+    const fromNamesModal = copySchemaParam === 'from_names_modal';
 
     if (selectedApplications.length === 0) {
       showNotification('Please select at least one application', 'error');
@@ -1844,9 +1845,9 @@ const MigrationView = ({ sites, showNotification }) => {
       return;
     }
 
-    // If migrating to same instance with multiple apps, need individual names
-    if (sourceInstance === destInstance && selectedApplications.length > 1 && typeof copySchemaParam !== 'boolean') {
-      // Initialize appNames with empty strings for each selected app
+    // Step 1: If initial button click and cloning to same instance, show names modal
+    if (sourceInstance === destInstance && !fromNamesModal && typeof copySchemaParam !== 'boolean') {
+      // Initialize appNames for all selected apps
       const initialNames = {};
       selectedApplications.forEach(appId => {
         const app = applications.find(a => a.id === appId);
@@ -1857,24 +1858,30 @@ const MigrationView = ({ sites, showNotification }) => {
       return;
     }
 
-    // If migrating to same instance with single app, require a new name
-    if (sourceInstance === destInstance && selectedApplications.length === 1 && !newName.trim() && typeof copySchemaParam !== 'boolean') {
-      showNotification('When cloning to the same instance, please provide a new name for the application', 'error');
+    // Step 2: If coming from names modal and cloning to same instance, execute migration directly
+    if (sourceInstance === destInstance && fromNamesModal) {
+      // For same instance, always skip schema copy (attributes are shared)
+      await executeMigration(false);
       return;
     }
 
-    // If this is the initial call (not from schema confirmation), check schema
-    if (typeof copySchemaParam !== 'boolean' && pendingMigration === null) {
-      // Store the migration request
+    // Step 3: For different instances, show schema confirmation modal
+    if (typeof copySchemaParam !== 'boolean' && !fromNamesModal && pendingMigration === null && sourceInstance !== destInstance) {
       setPendingMigration({ copySchema: false });
-
-      // Show schema confirmation modal
       setShowSchemaModal(true);
       return;
     }
 
+    // Step 4: Execute migration with user's schema choice
+    if (typeof copySchemaParam === 'boolean') {
+      await executeMigration(copySchema);
+    }
+  };
+
+  const executeMigration = async (copySchema: boolean) => {
     setIsMigrating(true);
     setShowSchemaModal(false);
+    setShowNamesModal(false);
 
     try {
       const token = localStorage.getItem('authToken');
@@ -1887,12 +1894,9 @@ const MigrationView = ({ sites, showNotification }) => {
         copySchema: copySchema
       };
 
-      // If cloning to same instance with multiple apps, send names mapping
-      if (sourceInstance === destInstance && selectedApplications.length > 1) {
+      // If cloning to same instance, send names mapping
+      if (sourceInstance === destInstance) {
         payload.appNames = appNames;
-      } else if (sourceInstance === destInstance && selectedApplications.length === 1) {
-        // Single app - use newName
-        payload.newName = newName.trim() || undefined;
       }
 
       const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/migrate`, {
@@ -1909,6 +1913,7 @@ const MigrationView = ({ sites, showNotification }) => {
         showNotification('Migration completed successfully!', 'success');
         setSelectedApplications([]);
         setNewName('');
+        setAppNames({});
         setPendingMigration(null);
       } else {
         const error = await response.json();
@@ -1948,7 +1953,7 @@ const MigrationView = ({ sites, showNotification }) => {
             <Copy size={16} className="text-blue-400 flex-shrink-0 mt-0.5" />
             <div>
               <p className="text-sm text-blue-200 font-medium">Cloning to Same Instance</p>
-              <p className="text-xs text-blue-300 mt-1">You must provide a new name for the cloned application to avoid conflicts.</p>
+              <p className="text-xs text-blue-300 mt-1">You'll be prompted to provide new names for the cloned applications. Schema attributes are automatically shared within the same instance.</p>
             </div>
           </div>
         </div>
@@ -2013,26 +2018,11 @@ const MigrationView = ({ sites, showNotification }) => {
             )}
           </div>
 
-          {sourceInstance === destInstance && (
-            <div className="w-full bg-blue-500/5 border border-blue-500/20 rounded-lg p-3">
-              <label className="block text-xs font-bold text-blue-300 uppercase tracking-wider mb-2 flex items-center">
-                <Copy size={12} className="mr-1" />
-                New Application Name *
-              </label>
-              <input
-                type="text"
-                className="w-full bg-slate-900 border border-blue-500/30 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-slate-500"
-                placeholder="e.g., My App - Copy"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-              />
-              <p className="text-[10px] text-blue-300 mt-1">Required when cloning to same instance</p>
-            </div>
-          )}
+          {/* Name field removed - handled in modal after clicking clone button */}
 
           <button
             onClick={handleMigrate}
-            disabled={isMigrating || selectedApplications.length === 0 || !talonInstances.length || (sourceInstance === destInstance && !newName.trim())}
+            disabled={isMigrating || selectedApplications.length === 0 || !talonInstances.length}
             className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-slate-600 disabled:cursor-not-allowed text-white p-3 rounded-lg shadow-lg transition-all active:scale-95 flex flex-col items-center gap-1"
           >
             <span className="font-bold text-sm">
@@ -2192,9 +2182,10 @@ const MigrationView = ({ sites, showNotification }) => {
                     showNotification('Please provide names for all applications', 'error');
                     return;
                   }
-                  setShowNamesModal(false);
-                  // Continue with migration - this will trigger the schema modal
-                  handleMigrate();
+                  // Continue with migration flow
+                  // For same instance, this will skip to executeMigration
+                  // For different instances, this will show schema modal
+                  handleMigrate('from_names_modal');
                 }}
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center"
                 disabled={!selectedApplications.every(appId => appNames[appId]?.trim())}
