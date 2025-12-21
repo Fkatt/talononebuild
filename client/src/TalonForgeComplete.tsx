@@ -47,7 +47,8 @@ import {
   Activity,
   Hash,
   Briefcase,
-  Target
+  Target,
+  Eye
 } from 'lucide-react';
 
 // --- Mock Data & Constants ---
@@ -2218,6 +2219,7 @@ const BackupView = ({ backups, protectedMode, sites, showNotification, setBackup
   const [realBackups, setRealBackups] = useState([]);
   const [restoreModal, setRestoreModal] = useState(null);
   const [verticalCounts, setVerticalCounts] = useState({});
+  const [viewDetailsModal, setViewDetailsModal] = useState(null);
 
   // Fetch backup counts from API
   useEffect(() => {
@@ -2434,6 +2436,26 @@ const BackupView = ({ backups, protectedMode, sites, showNotification, setBackup
     }
   };
 
+  const handleViewDetails = async (backup) => {
+    try {
+      const token = localStorage.getItem('authToken');
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/backups/${backup.id}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setViewDetailsModal({
+          backup: backup,
+          data: data.data.data // The actual backup data
+        });
+      }
+    } catch (error) {
+      console.error('Failed to fetch backup details:', error);
+      showNotification('Failed to load backup details', 'error');
+    }
+  };
+
   const handleDeleteBackup = async (backupId) => {
     if (!window.confirm('Are you sure you want to delete this backup?')) return;
 
@@ -2567,6 +2589,13 @@ const BackupView = ({ backups, protectedMode, sites, showNotification, setBackup
                        <td className="px-4 py-3 font-mono text-xs">{(backup.size / 1024).toFixed(1)} KB</td>
                        <td className="px-4 py-3 text-right">
                          <div className="flex justify-end space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                           <button
+                             onClick={() => handleViewDetails(backup)}
+                             className="p-1 hover:bg-slate-700 rounded text-purple-400"
+                             title="View Contents"
+                           >
+                             <Eye size={14} />
+                           </button>
                            <button
                              onClick={() => handleDownloadBackup(backup.id, backup.name)}
                              className="p-1 hover:bg-slate-700 rounded text-green-400"
@@ -2776,6 +2805,114 @@ const BackupView = ({ backups, protectedMode, sites, showNotification, setBackup
                   Restore
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* View Details Modal */}
+      {viewDetailsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 w-[800px] max-h-[80vh] overflow-y-auto shadow-2xl">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-bold text-white flex items-center">
+                <Eye className="mr-2 text-purple-400" size={20} /> Backup Contents
+              </h3>
+              <button onClick={() => setViewDetailsModal(null)} className="text-slate-500 hover:text-white">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="bg-purple-500/10 border border-purple-500/20 rounded-lg p-3">
+                <p className="text-sm text-purple-200">
+                  <span className="font-semibold">{viewDetailsModal.backup.name}</span>
+                  <span className="text-slate-400 ml-2">• {new Date(viewDetailsModal.backup.createdAt).toLocaleString()}</span>
+                  <span className="text-slate-400 ml-2">• {(viewDetailsModal.backup.size / 1024).toFixed(1)} KB</span>
+                </p>
+              </div>
+
+              {viewDetailsModal.data && (
+                <div className="space-y-4">
+                  {/* Applications */}
+                  {viewDetailsModal.data.applications && viewDetailsModal.data.applications.length > 0 && (
+                    <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-4">
+                      <h4 className="text-sm font-bold text-white mb-3 flex items-center">
+                        <Server size={16} className="mr-2 text-blue-400" />
+                        Applications ({viewDetailsModal.data.applications.length})
+                      </h4>
+                      <div className="space-y-2">
+                        {viewDetailsModal.data.applications.map((app, idx) => (
+                          <div key={idx} className="bg-slate-800/50 border border-slate-700/50 rounded p-2">
+                            <p className="text-sm font-medium text-slate-200">{app.attributes?.name || app.name || `App ${app.id}`}</p>
+                            <p className="text-xs text-slate-500">ID: {app.id}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Campaigns */}
+                  {viewDetailsModal.data.campaigns && viewDetailsModal.data.campaigns.length > 0 && (
+                    <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-4">
+                      <h4 className="text-sm font-bold text-white mb-3 flex items-center">
+                        <Target size={16} className="mr-2 text-emerald-400" />
+                        Campaigns ({viewDetailsModal.data.campaigns.length})
+                      </h4>
+                      <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                        {viewDetailsModal.data.campaigns.map((campaign, idx) => (
+                          <div key={idx} className="bg-slate-800/50 border border-slate-700/50 rounded p-2">
+                            <p className="text-sm font-medium text-slate-200">{campaign.name}</p>
+                            <p className="text-xs text-slate-500">ID: {campaign.id} • State: {campaign.state}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Rulesets */}
+                  {viewDetailsModal.data.rulesets && viewDetailsModal.data.rulesets.length > 0 && (
+                    <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-4">
+                      <h4 className="text-sm font-bold text-white mb-3 flex items-center">
+                        <Hash size={16} className="mr-2 text-yellow-400" />
+                        Rulesets ({viewDetailsModal.data.rulesets.length})
+                      </h4>
+                      <div className="space-y-2 max-h-[200px] overflow-y-auto">
+                        {viewDetailsModal.data.rulesets.map((ruleset, idx) => (
+                          <div key={idx} className="bg-slate-800/50 border border-slate-700/50 rounded p-2">
+                            <p className="text-xs text-slate-400">Ruleset ID: {ruleset.id} • {ruleset.rules?.length || 0} rules</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Attributes */}
+                  {viewDetailsModal.data.attributes && viewDetailsModal.data.attributes.length > 0 && (
+                    <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-4">
+                      <h4 className="text-sm font-bold text-white mb-3 flex items-center">
+                        <Database size={16} className="mr-2 text-orange-400" />
+                        Attributes ({viewDetailsModal.data.attributes.length})
+                      </h4>
+                      <div className="space-y-2 max-h-[200px] overflow-y-auto">
+                        {viewDetailsModal.data.attributes.map((attr, idx) => (
+                          <div key={idx} className="bg-slate-800/50 border border-slate-700/50 rounded p-2">
+                            <p className="text-sm font-medium text-slate-200">{attr.name}</p>
+                            <p className="text-xs text-slate-500">{attr.entity} • {attr.dataType}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <button
+                onClick={() => setViewDetailsModal(null)}
+                className="w-full bg-slate-700 hover:bg-slate-600 text-white font-medium py-2.5 rounded-lg transition-colors"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>
