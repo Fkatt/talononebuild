@@ -187,16 +187,34 @@ const Card = ({ children, className = "" }) => (
   </div>
 );
 
-const Badge = ({ status = 'offline' }) => {
+const Badge = ({ status = 'offline', errorMessage = '' }) => {
   const styles = {
     online: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
     maintenance: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
     offline: 'bg-red-500/10 text-red-400 border-red-500/20',
+    error: 'bg-red-500/10 text-red-400 border-red-500/20',
     synced: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
     missing_dest: 'bg-red-500/10 text-red-400 border-red-500/20',
   };
-  
+
   let label = status;
+
+  // Customize label based on error status
+  if (status === 'error' || status === 'offline') {
+    if (errorMessage) {
+      if (errorMessage.includes('Unauthorized') || errorMessage.includes('401')) {
+        label = 'Invalid Key';
+      } else if (errorMessage.includes('404') || errorMessage.includes('not found')) {
+        label = 'Invalid Endpoint';
+      } else if (errorMessage.includes('timeout') || errorMessage.includes('ECONNREFUSED')) {
+        label = 'Connection Timeout';
+      } else {
+        label = 'Offline';
+      }
+    } else {
+      label = status === 'error' ? 'Connection Failed' : 'Offline';
+    }
+  }
   if (status === 'missing_dest') label = 'Missing in Dest';
   
   return (
@@ -904,22 +922,24 @@ const InstanceManagerView = ({ sites, protectedMode, showNotification, setSites 
       if (response.ok && data.success) {
         if (data.data.success) {
           // Update instance status to online
-          setSites(sites.map(s => s.id === instanceId ? { ...s, status: 'online' } : s));
+          setSites(sites.map(s => s.id === instanceId ? { ...s, status: 'online', errorMessage: '' } : s));
           showNotification('Connection successful!', 'success');
         } else {
-          // Update instance status to error
-          setSites(sites.map(s => s.id === instanceId ? { ...s, status: 'error' } : s));
-          showNotification(`Connection failed: ${data.data.error || 'Unknown error'}`, 'error');
+          // Update instance status to error with message
+          const errorMsg = data.data.error || 'Unknown error';
+          setSites(sites.map(s => s.id === instanceId ? { ...s, status: 'error', errorMessage: errorMsg } : s));
+          showNotification(`Connection failed: ${errorMsg}`, 'error');
         }
       } else {
-        setSites(sites.map(s => s.id === instanceId ? { ...s, status: 'error' } : s));
         const errorMsg = data.error?.message || 'Failed to test connection';
+        setSites(sites.map(s => s.id === instanceId ? { ...s, status: 'error', errorMessage: errorMsg } : s));
         showNotification(errorMsg, 'error');
       }
     } catch (error) {
       console.error('Test connection error:', error);
-      setSites(sites.map(s => s.id === instanceId ? { ...s, status: 'error' } : s));
-      showNotification('Failed to test connection: ' + error.message, 'error');
+      const errorMsg = error.message || 'Connection failed';
+      setSites(sites.map(s => s.id === instanceId ? { ...s, status: 'error', errorMessage: errorMsg } : s));
+      showNotification('Failed to test connection: ' + errorMsg, 'error');
     }
   };
 
@@ -1149,7 +1169,7 @@ const InstanceManagerView = ({ sites, protectedMode, showNotification, setSites 
                      <span className="bg-slate-700/50 px-2 py-0.5 rounded text-xs">{site.vertical}</span>
                    </div>
                    <div className="col-span-2 flex justify-end">
-                      <Badge status={site.status} />
+                      <Badge status={site.status} errorMessage={site.errorMessage || ''} />
                    </div>
                 </div>
 
@@ -1274,7 +1294,7 @@ const InstanceManagerView = ({ sites, protectedMode, showNotification, setSites 
                               <div className="text-[10px] text-slate-500">{site.url}</div>
                            </div>
                         </div>
-                        <Badge status={site.status} />
+                        <Badge status={site.status} errorMessage={site.errorMessage || ''} />
                      </div>
                   ))}
                </div>
@@ -2624,6 +2644,52 @@ export default function TalonForgeApp({ user, onLogout }: TalonForgeAppProps) {
   useEffect(() => {
     fetchInstances();
   }, []);
+
+  // Auto-check instance status every hour
+  useEffect(() => {
+    const checkAllInstanceStatuses = async () => {
+      const token = localStorage.getItem('authToken');
+      if (!token || sites.length === 0) return;
+
+      console.log('Running hourly status check for all instances...');
+
+      for (const site of sites) {
+        try {
+          const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/instances/${site.id}/test`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+
+          const data = await response.json();
+
+          if (response.ok && data.success && data.data.success) {
+            // Update status to online
+            setSites(prevSites =>
+              prevSites.map(s => s.id === site.id ? { ...s, status: 'online', errorMessage: '' } : s)
+            );
+          } else {
+            // Update status to error with message
+            const errorMsg = data.data?.error || data.error?.message || 'Connection failed';
+            setSites(prevSites =>
+              prevSites.map(s => s.id === site.id ? { ...s, status: 'error', errorMessage: errorMsg } : s)
+            );
+          }
+        } catch (error) {
+          // Update status to offline on error
+          const errorMsg = error.message || 'Connection timeout';
+          setSites(prevSites =>
+            prevSites.map(s => s.id === site.id ? { ...s, status: 'offline', errorMessage: errorMsg } : s)
+          );
+        }
+      }
+    };
+
+    // Check immediately on mount, then every hour
+    checkAllInstanceStatuses();
+    const interval = setInterval(checkAllInstanceStatuses, 60 * 60 * 1000); // 60 minutes
+
+    return () => clearInterval(interval);
+  }, [sites.length]); // Re-run when number of instances changes
 
   const fetchInstances = async () => {
     try {
