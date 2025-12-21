@@ -1448,62 +1448,104 @@ const InstanceManagerView = ({ sites, protectedMode, showNotification, setSites 
 };
 
 const MigrationView = ({ sites, showNotification }) => {
-  const [selectedItems, setSelectedItems] = useState({});
-  const [mode, setMode] = useState('talon'); // 'talon', 'contentful', 'loyalty'
-  const [showSchemaWarning, setShowSchemaWarning] = useState(false);
-  const [isCloning, setIsCloning] = useState(false);
-  const [cloneStage, setCloneStage] = useState(''); // 'analyzing', 'schema', 'copying', 'done'
+  // Filter for Talon instances only
+  const talonInstances = sites.filter(s => s.type === 'talon');
 
-  // Cascading Selection Logic
-  const toggleItem = (item) => {
-    setSelectedItems(prev => {
-      const newState = { ...prev };
-      const isSelected = !prev[item.id];
-      newState[item.id] = isSelected;
-      if (item.children) {
-        const toggleChildren = (children) => {
-          children.forEach(child => {
-            newState[child.id] = isSelected;
-            if (child.children) toggleChildren(child.children);
-          });
-        };
-        toggleChildren(item.children);
-      }
-      return newState;
-    });
-  };
+  const [selectedApplications, setSelectedApplications] = useState([]);
+  const [sourceInstance, setSourceInstance] = useState(talonInstances.length > 0 ? talonInstances[0].id : '');
+  const [destInstance, setDestInstance] = useState(talonInstances.length > 1 ? talonInstances[1].id : '');
+  const [applications, setApplications] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [isMigrating, setIsMigrating] = useState(false);
+  const [newName, setNewName] = useState('');
 
-  const getAssetsToDisplay = () => {
-    if (mode === 'talon') return MOCK_TALON_ASSETS;
-    if (mode === 'contentful') return MOCK_CONTENTFUL_ASSETS;
-    if (mode === 'loyalty') return MOCK_LOYALTY_ASSETS;
-    return [];
-  };
+  // Fetch applications when source instance changes
+  useEffect(() => {
+    if (sourceInstance) {
+      fetchApplications(sourceInstance);
+    }
+  }, [sourceInstance]);
 
-  const handleClone = () => {
-    // Mock check for schema dependencies
-    const hasRisk = Math.random() > 0.5; 
-    
-    setIsCloning(true);
-    setCloneStage('analyzing');
+  const fetchApplications = async (instanceId) => {
+    setLoading(true);
+    try {
+      const token = localStorage.getItem('authToken');
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/instances/${instanceId}/applications`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
 
-    setTimeout(() => {
-      if (hasRisk && mode !== 'contentful') {
-        setIsCloning(false);
-        setShowSchemaWarning(true);
+      if (response.ok) {
+        const data = await response.json();
+        setApplications(data.data || []);
       } else {
-        startActualCloneProcess();
+        showNotification('Failed to fetch applications', 'error');
       }
-    }, 1500);
+    } catch (error) {
+      console.error('Failed to fetch applications:', error);
+      showNotification('Failed to fetch applications', 'error');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const startActualCloneProcess = () => {
-    setCloneStage('copying');
-    setTimeout(() => {
-      setIsCloning(false);
-      setCloneStage('');
-      showNotification(`${mode} Migration Complete!`, "success");
-    }, 2000);
+  const toggleApplication = (appId) => {
+    setSelectedApplications(prev =>
+      prev.includes(appId)
+        ? prev.filter(id => id !== appId)
+        : [...prev, appId]
+    );
+  };
+
+  const handleMigrate = async () => {
+    if (selectedApplications.length === 0) {
+      showNotification('Please select at least one application', 'error');
+      return;
+    }
+
+    if (!destInstance) {
+      showNotification('Please select a destination instance', 'error');
+      return;
+    }
+
+    // If migrating to same instance, require a new name
+    if (sourceInstance === destInstance && !newName.trim()) {
+      showNotification('When migrating to the same instance, a new name must be provided', 'error');
+      return;
+    }
+
+    setIsMigrating(true);
+
+    try {
+      const token = localStorage.getItem('authToken');
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/migrate`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          sourceId: parseInt(sourceInstance, 10),
+          destId: parseInt(destInstance, 10),
+          assets: selectedApplications.map(id => ({ id, type: 'application' })),
+          newName: newName.trim() || undefined
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        showNotification('Migration completed successfully!', 'success');
+        setSelectedApplications([]);
+        setNewName('');
+      } else {
+        const error = await response.json();
+        showNotification(error.error?.message || 'Migration failed', 'error');
+      }
+    } catch (error) {
+      console.error('Migration error:', error);
+      showNotification('Migration failed: ' + error.message, 'error');
+    } finally {
+      setIsMigrating(false);
+    }
   };
 
   return (
@@ -1511,73 +1553,64 @@ const MigrationView = ({ sites, showNotification }) => {
       <div className="flex justify-between items-end">
         <div>
           <h2 className="text-2xl font-bold text-white">Migration Hub</h2>
-          <p className="text-slate-400 text-sm">Clone full ecosystems: Promotions, Loyalty, and CMS Content.</p>
-        </div>
-        <div className="bg-slate-800 p-1 rounded-lg border border-slate-700 flex">
-           <button 
-             onClick={() => setMode('talon')}
-             className={`px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center ${mode === 'talon' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
-           >
-             <Server size={14} className="mr-2" /> Promotions
-           </button>
-           <button 
-             onClick={() => setMode('loyalty')}
-             className={`px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center ${mode === 'loyalty' ? 'bg-pink-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
-           >
-             <Award size={14} className="mr-2" /> Loyalty
-           </button>
-           <button 
-             onClick={() => setMode('contentful')}
-             className={`px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center ${mode === 'contentful' ? 'bg-yellow-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
-           >
-             <Layout size={14} className="mr-2" /> Content
-           </button>
+          <p className="text-slate-400 text-sm">Migrate applications between Talon.One instances with all campaigns, rules, and coupons.</p>
         </div>
       </div>
+
+      {talonInstances.length < 2 && (
+        <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-4">
+          <div className="flex items-start space-x-2">
+            <AlertTriangle size={16} className="text-yellow-400 flex-shrink-0 mt-0.5" />
+            <p className="text-sm text-yellow-200">
+              You need at least 2 Talon.One instances to use the Migration Hub. Please add more instances first.
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-12 gap-6 flex-1 min-h-0">
         {/* Source Column */}
         <div className="col-span-5 flex flex-col gap-4">
            <div className="bg-slate-800 p-4 rounded-xl border border-slate-700">
-              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Source Environment</label>
-              <select className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-                {sites.filter(s => mode === 'contentful' ? s.type === 'contentful' : s.type === 'talon').map(s => <option key={s.id}>{s.name}</option>)}
+              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Source Instance</label>
+              <select
+                className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={sourceInstance}
+                onChange={(e) => setSourceInstance(e.target.value)}
+              >
+                {talonInstances.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
            </div>
            
            <div className="bg-slate-800 rounded-xl border border-slate-700 flex-1 overflow-hidden flex flex-col">
               <div className="p-3 border-b border-slate-700 bg-slate-800/50">
-                <div className="relative">
-                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                  <input type="text" placeholder="Filter assets..." className="w-full bg-slate-900 rounded-md py-1.5 pl-9 pr-3 text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-blue-500" />
-                </div>
+                <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Applications</h3>
               </div>
               <div className="flex-1 overflow-y-auto p-2 space-y-1">
-                 {getAssetsToDisplay().map((rootItem) => (
-                   <div key={rootItem.id} className="mb-2">
-                     <div className="flex items-center p-2 hover:bg-slate-700/50 rounded cursor-pointer group" onClick={() => toggleItem(rootItem)}>
-                        <div className={`w-4 h-4 rounded border mr-3 flex items-center justify-center transition-colors ${selectedItems[rootItem.id] ? 'bg-blue-500 border-blue-500' : 'border-slate-600'}`}>
-                          {selectedItems[rootItem.id] && <CheckCircle2 size={12} className="text-white" />}
-                        </div>
-                        {mode === 'talon' ? <Folder size={16} className="text-blue-400 mr-2" /> : mode === 'loyalty' ? <Award size={16} className="text-pink-400 mr-2" /> : <Type size={16} className="text-yellow-400 mr-2" />}
-                        <span className="text-sm text-slate-200 font-medium">{rootItem.name}</span>
-                        <span className="ml-auto text-[10px] bg-slate-700 text-slate-400 px-1.5 py-0.5 rounded border border-slate-600">{rootItem.type}</span>
-                     </div>
-                     
-                     {/* Children */}
-                     <div className="ml-6 border-l border-slate-700 pl-2 mt-1 space-y-1">
-                        {rootItem.children && rootItem.children.map(child => (
-                          <div key={child.id}>
-                            <div className="flex items-center p-1.5 hover:bg-slate-700/50 rounded cursor-pointer" onClick={() => toggleItem(child)}>
-                              <div className={`w-3 h-3 rounded border mr-3 flex items-center justify-center transition-colors ${selectedItems[child.id] ? 'bg-blue-500 border-blue-500' : 'border-slate-600'}`}></div>
-                              <span className="text-xs text-slate-300">{child.name}</span>
-                              <span className="ml-auto text-[9px] bg-slate-700/50 text-slate-500 px-1 py-0.5 rounded">{child.type}</span>
-                            </div>
-                          </div>
-                        ))}
-                     </div>
-                   </div>
-                 ))}
+                {loading ? (
+                  <div className="flex items-center justify-center h-full">
+                    <Loader2 className="animate-spin text-slate-500" size={24} />
+                  </div>
+                ) : applications.length > 0 ? (
+                  applications.map((app) => (
+                    <div
+                      key={app.id}
+                      className="flex items-center p-2 hover:bg-slate-700/50 rounded cursor-pointer group"
+                      onClick={() => toggleApplication(app.id)}
+                    >
+                      <div className={`w-4 h-4 rounded border mr-3 flex items-center justify-center transition-colors ${selectedApplications.includes(app.id) ? 'bg-blue-500 border-blue-500' : 'border-slate-600'}`}>
+                        {selectedApplications.includes(app.id) && <CheckCircle2 size={12} className="text-white" />}
+                      </div>
+                      <Database size={16} className="text-blue-400 mr-2" />
+                      <span className="text-sm text-slate-200 font-medium">{app.name}</span>
+                      <span className="ml-auto text-[10px] bg-slate-700 text-slate-400 px-1.5 py-0.5 rounded border border-slate-600">ID: {app.id}</span>
+                    </div>
+                  ))
+                ) : (
+                  <div className="flex items-center justify-center h-full text-slate-500 text-sm">
+                    No applications found
+                  </div>
+                )}
               </div>
            </div>
         </div>
@@ -1585,62 +1618,61 @@ const MigrationView = ({ sites, showNotification }) => {
         {/* Action Column */}
         <div className="col-span-2 flex flex-col justify-center items-center space-y-4">
           <div className="h-full w-[1px] bg-gradient-to-b from-transparent via-slate-700 to-transparent absolute left-1/2 -z-10 hidden md:block" />
-          
+
           <div className="bg-slate-800 p-4 rounded-full border border-slate-700 shadow-xl z-10 relative">
-            {isCloning ? (
+            {isMigrating ? (
                <Loader2 className="animate-spin text-white" size={24} />
             ) : (
-               <ArrowRightLeft size={24} className={mode === 'talon' ? "text-blue-400 animate-pulse" : mode === 'loyalty' ? "text-pink-400 animate-pulse" : "text-yellow-400 animate-pulse"} />
+               <ArrowRightLeft size={24} className="text-blue-400 animate-pulse" />
             )}
           </div>
-          
-          <button 
-            onClick={handleClone}
-            disabled={isCloning}
-            className={`w-full text-white p-3 rounded-lg shadow-lg transition-all active:scale-95 flex flex-col items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed
-              ${mode === 'talon' ? 'bg-blue-600 hover:bg-blue-500 shadow-blue-900/20' : 
-                mode === 'loyalty' ? 'bg-pink-600 hover:bg-pink-500 shadow-pink-900/20' : 
-                'bg-yellow-600 hover:bg-yellow-500 shadow-yellow-900/20'}`}
-          >
-            <span className="font-bold text-sm">{isCloning ? 'Processing...' : 'Clone Selected'}</span>
-            <span className="text-[10px] opacity-80">
-              {Object.values(selectedItems).filter(Boolean).length} Assets Selected
-            </span>
-          </button>
-          
-          {isCloning && (
-            <div className="text-center">
-               <span className="text-xs font-mono text-emerald-400 animate-pulse">
-                 {cloneStage === 'analyzing' && 'Analyzing Dependencies...'}
-                 {cloneStage === 'copying' && 'Migrating Objects...'}
-               </span>
+
+          {sourceInstance === destInstance && (
+            <div className="w-full">
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">New App Name</label>
+              <input
+                type="text"
+                className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Required for same instance"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+              />
             </div>
           )}
 
-          <div className="text-center px-2">
-            <p className="text-xs text-slate-500 mb-2">Options</p>
-            <div className="flex flex-col gap-2">
-              <label className="flex items-center text-xs text-slate-400 cursor-pointer hover:text-white">
-                <input type="checkbox" className="mr-2 rounded border-slate-700 bg-slate-800" defaultChecked />
-                Overwrite Existing
-              </label>
-              <label className="flex items-center text-xs text-slate-400 cursor-pointer hover:text-white">
-                <input type="checkbox" className="mr-2 rounded border-slate-700 bg-slate-800" defaultChecked />
-                Publish Immediately
-              </label>
+          <button
+            onClick={handleMigrate}
+            disabled={isMigrating || selectedApplications.length === 0 || !talonInstances.length}
+            className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-slate-600 disabled:cursor-not-allowed text-white p-3 rounded-lg shadow-lg transition-all active:scale-95 flex flex-col items-center gap-1"
+          >
+            <span className="font-bold text-sm">{isMigrating ? 'Migrating...' : 'Migrate Selected'}</span>
+            <span className="text-[10px] opacity-80">
+              {selectedApplications.length} App{selectedApplications.length !== 1 ? 's' : ''} Selected
+            </span>
+          </button>
+
+          {isMigrating && (
+            <div className="text-center">
+               <span className="text-xs font-mono text-emerald-400 animate-pulse">
+                 Migrating applications, campaigns, rules, and coupons...
+               </span>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Destination Column */}
         <div className="col-span-5 flex flex-col gap-4">
            <div className="bg-slate-800 p-4 rounded-xl border border-slate-700">
-              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Destination Environment</label>
-              <select className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-                 {sites.filter(s => (mode === 'contentful' ? s.type === 'contentful' : s.type === 'talon') && !s.name.includes('Prod')).map(s => <option key={s.id}>{s.name}</option>)}
+              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Destination Instance</label>
+              <select
+                className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={destInstance}
+                onChange={(e) => setDestInstance(e.target.value)}
+              >
+                {talonInstances.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
            </div>
-           
+
            <div className="bg-slate-800 rounded-xl border border-slate-700 flex-1 flex items-center justify-center border-dashed border-2 border-slate-700/50 bg-slate-800/30">
               <div className="text-center p-6">
                 <div className="w-16 h-16 bg-slate-700/30 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-500">
@@ -1652,48 +1684,6 @@ const MigrationView = ({ sites, showNotification }) => {
            </div>
         </div>
       </div>
-
-      {/* Schema Warning Modal */}
-      {showSchemaWarning && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/90 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-slate-800 border border-red-500/50 rounded-xl p-6 w-[450px] shadow-2xl">
-            <div className="flex items-start mb-4">
-              <div className="bg-red-500/10 p-3 rounded-full mr-4">
-                <AlertTriangle className="text-red-500" size={24} />
-              </div>
-              <div>
-                <h3 className="text-lg font-bold text-white">Missing Attributes Detected</h3>
-                <p className="text-sm text-slate-400 mt-1">
-                  The assets you are cloning rely on Attributes that do not exist on the Destination environment. This will cause the migration to fail.
-                </p>
-              </div>
-            </div>
-
-            <div className="bg-slate-900 rounded p-3 mb-6 border border-slate-700">
-              <div className="text-xs font-mono text-red-400">Missing: CartItem.ShoeSize</div>
-              <div className="text-xs font-mono text-red-400">Missing: CustomerProfile.IsVIP</div>
-            </div>
-
-            <div className="flex space-x-3">
-              <button 
-                onClick={() => setShowSchemaWarning(false)}
-                className="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-2 rounded-lg text-sm font-medium"
-              >
-                Cancel
-              </button>
-              <button 
-                onClick={() => {
-                  setShowSchemaWarning(false);
-                  startActualCloneProcess();
-                }}
-                className="flex-1 bg-orange-600 hover:bg-orange-500 text-white py-2 rounded-lg text-sm font-bold flex items-center justify-center"
-              >
-                <RefreshCw size={14} className="mr-2" /> Sync & Clone
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
