@@ -884,6 +884,7 @@ const InstanceManagerView = ({ sites, protectedMode, showNotification, setSites 
   const [viewMode, setViewMode] = useState('list'); // 'list' or 'gigastores'
   const [showBundleModal, setShowBundleModal] = useState(false);
   const [showAddInstanceModal, setShowAddInstanceModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [showCreateBundleModal, setShowCreateBundleModal] = useState(false);
   const [editingBundle, setEditingBundle] = useState(null);
   const [selectedToAdd, setSelectedToAdd] = useState("");
@@ -899,6 +900,79 @@ const InstanceManagerView = ({ sites, protectedMode, showNotification, setSites 
     vertical: 'Retail',
     apiKey: ''
   });
+
+  // Edit Instance Form State
+  const [editingInstance, setEditingInstance] = useState(null);
+
+  const handleOpenEditModal = (site) => {
+    setEditingInstance({
+      id: site.id,
+      name: site.name,
+      type: site.type,
+      region: site.region || 'US',
+      url: site.url,
+      vertical: site.vertical || 'Retail',
+      apiKey: '' // Don't pre-fill for security
+    });
+    setShowEditModal(true);
+  };
+
+  const handleUpdateInstance = async () => {
+    try {
+      const token = localStorage.getItem('authToken');
+      if (!token) {
+        showNotification('Authentication required', 'error');
+        return;
+      }
+
+      // Validate required fields
+      if (!editingInstance.name || !editingInstance.url) {
+        showNotification('Please fill in all required fields', 'error');
+        return;
+      }
+
+      showNotification('Updating instance...', 'info');
+
+      const updateData = {
+        name: editingInstance.name,
+        region: editingInstance.region,
+        url: editingInstance.url,
+        vertical: editingInstance.vertical
+      };
+
+      // Only include credentials if API key was entered
+      if (editingInstance.apiKey) {
+        updateData.credentials = {
+          apiKey: editingInstance.apiKey
+        };
+      }
+
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/instances/${editingInstance.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(updateData)
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        // Update local state
+        setSites(sites.map(s => s.id === editingInstance.id ? data.data : s));
+        setShowEditModal(false);
+        setEditingInstance(null);
+        showNotification('Instance updated successfully!', 'success');
+      } else {
+        const errorMsg = data.error?.message || 'Failed to update instance';
+        showNotification(errorMsg, 'error');
+      }
+    } catch (error) {
+      console.error('Update instance error:', error);
+      showNotification('Failed to update instance: ' + error.message, 'error');
+    }
+  };
 
   const handleTestConnection = async (instanceId) => {
     try {
@@ -1227,7 +1301,14 @@ const InstanceManagerView = ({ sites, protectedMode, showNotification, setSites 
                                <CheckCircle2 size={14} className="mr-2" />
                                Test Connection
                              </button>
-                             <button className="flex-1 bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 border border-blue-600/20 py-2 px-4 rounded text-sm font-medium transition-colors">
+                             <button
+                               onClick={(e) => {
+                                 e.stopPropagation();
+                                 handleOpenEditModal(site);
+                               }}
+                               className="flex-1 bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 border border-blue-600/20 py-2 px-4 rounded text-sm font-medium transition-colors flex items-center justify-center"
+                             >
+                               <Settings size={14} className="mr-2" />
                                Edit Configuration
                              </button>
                              <button
@@ -1543,17 +1624,119 @@ const InstanceManagerView = ({ sites, protectedMode, showNotification, setSites 
               </div>
 
               <div className="flex justify-end gap-2 mt-6">
-                <button 
+                <button
                   onClick={() => setShowAddInstanceModal(false)}
                   className="px-4 py-2 text-sm text-slate-400 hover:text-white"
                 >
                   Cancel
                 </button>
-                <button 
+                <button
                   onClick={handleCreateInstance}
                   className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-medium"
                 >
                   Create Instance
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Instance Modal */}
+      {showEditModal && editingInstance && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/90 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 w-[450px] shadow-2xl">
+            <h3 className="text-lg font-bold text-white mb-6 flex items-center">
+              <Settings className="mr-2 text-blue-400" size={20} />
+              Edit Instance Configuration
+            </h3>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Instance Type</label>
+                <div className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm text-slate-400">
+                  {editingInstance.type === 'talon' ? 'Talon.One' : 'Contentful'} (cannot be changed)
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Name</label>
+                <input
+                  type="text"
+                  className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm text-white"
+                  placeholder="e.g., Summer Campaign Staging"
+                  value={editingInstance.name}
+                  onChange={(e) => setEditingInstance({...editingInstance, name: e.target.value})}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
+                  {editingInstance.type === 'talon' ? 'Management API Endpoint' : 'Content Management API Endpoint'}
+                </label>
+                <input
+                  type="text"
+                  className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm text-white"
+                  placeholder="https://..."
+                  value={editingInstance.url}
+                  onChange={(e) => setEditingInstance({...editingInstance, url: e.target.value})}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">API Key / Token</label>
+                <input
+                  type="password"
+                  className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm text-white font-mono"
+                  placeholder="Leave empty to keep current key"
+                  value={editingInstance.apiKey}
+                  onChange={(e) => setEditingInstance({...editingInstance, apiKey: e.target.value})}
+                />
+                <p className="text-xs text-slate-500 mt-1">Leave empty to keep the existing API key</p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Region</label>
+                <select
+                  className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm text-white"
+                  value={editingInstance.region}
+                  onChange={(e) => setEditingInstance({...editingInstance, region: e.target.value})}
+                >
+                  <option value="US">United States</option>
+                  <option value="EU">Europe</option>
+                  <option value="AP">Asia Pacific</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Vertical</label>
+                <select
+                  className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm text-white"
+                  value={editingInstance.vertical}
+                  onChange={(e) => setEditingInstance({...editingInstance, vertical: e.target.value})}
+                >
+                  <option>Retail</option>
+                  <option>Gaming</option>
+                  <option>FinTech</option>
+                  <option>On-Demand</option>
+                </select>
+              </div>
+
+              <div className="flex justify-end gap-2 mt-6">
+                <button
+                  onClick={() => {
+                    setShowEditModal(false);
+                    setEditingInstance(null);
+                  }}
+                  className="px-4 py-2 text-sm text-slate-400 hover:text-white"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleUpdateInstance}
+                  className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-medium"
+                >
+                  Save Changes
                 </button>
               </div>
             </div>
