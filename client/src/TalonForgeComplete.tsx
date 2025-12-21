@@ -213,13 +213,40 @@ const LoginView = ({ onLogin }) => {
   const [email, setEmail] = useState('admin@talonforge.io');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (USERS[email]) {
-      onLogin(USERS[email]);
-    } else {
-      setError('Invalid credentials. Try admin@talonforge.io');
+    setError('');
+    setLoading(true);
+
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        // Store token in localStorage
+        localStorage.setItem('authToken', data.data.token);
+
+        // Call onLogin with user data
+        onLogin({
+          name: data.data.user.email.split('@')[0],
+          role: data.data.user.role,
+          avatar: data.data.user.email.substring(0, 2).toUpperCase()
+        });
+      } else {
+        setError(data.error?.message || 'Invalid email or password');
+      }
+    } catch (error) {
+      console.error('Login error:', error);
+      setError('Failed to connect to server. Please check your connection.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -257,8 +284,19 @@ const LoginView = ({ onLogin }) => {
             
             {error && <p className="text-red-400 text-xs">{error}</p>}
 
-            <button type="submit" className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg transition-colors mt-2">
-              Sign In
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-slate-600 disabled:cursor-not-allowed text-white font-bold py-3 rounded-lg transition-colors mt-2 flex items-center justify-center"
+            >
+              {loading ? (
+                <>
+                  <Loader2 size={16} className="mr-2 animate-spin" />
+                  Signing in...
+                </>
+              ) : (
+                'Sign In'
+              )}
             </button>
           </form>
         </Card>
