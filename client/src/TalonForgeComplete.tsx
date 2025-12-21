@@ -1753,11 +1753,14 @@ const MigrationView = ({ sites, showNotification }) => {
 
   const [selectedApplications, setSelectedApplications] = useState([]);
   const [sourceInstance, setSourceInstance] = useState(talonInstances.length > 0 ? talonInstances[0].id : '');
-  const [destInstance, setDestInstance] = useState(talonInstances.length > 1 ? talonInstances[1].id : '');
+  const [destInstance, setDestInstance] = useState(talonInstances.length > 0 ? talonInstances[0].id : '');
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(false);
   const [isMigrating, setIsMigrating] = useState(false);
   const [newName, setNewName] = useState('');
+  const [showSchemaModal, setShowSchemaModal] = useState(false);
+  const [schemaDiff, setSchemaDiff] = useState(null);
+  const [pendingMigration, setPendingMigration] = useState(null);
 
   // Fetch applications when source instance changes
   useEffect(() => {
@@ -1801,7 +1804,31 @@ const MigrationView = ({ sites, showNotification }) => {
     );
   };
 
-  const handleMigrate = async () => {
+  const checkSchema = async () => {
+    // For now, we'll simulate schema checking
+    // In a real implementation, this would call an API endpoint
+    // that compares attributes between source and destination
+    try {
+      const token = localStorage.getItem('authToken');
+      // This would be a real API call in production
+      // const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/instances/compare-schema`, {
+      //   method: 'POST',
+      //   headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      //   body: JSON.stringify({ sourceId: sourceInstance, destId: destInstance })
+      // });
+
+      // For now, show a simple modal asking if they want to check/copy schema
+      return {
+        missingAttributes: [],
+        needsCopy: false
+      };
+    } catch (error) {
+      console.error('Schema check error:', error);
+      return { missingAttributes: [], needsCopy: false };
+    }
+  };
+
+  const handleMigrate = async (copySchema = false) => {
     if (selectedApplications.length === 0) {
       showNotification('Please select at least one application', 'error');
       return;
@@ -1814,11 +1841,22 @@ const MigrationView = ({ sites, showNotification }) => {
 
     // If migrating to same instance, require a new name
     if (sourceInstance === destInstance && !newName.trim()) {
-      showNotification('When migrating to the same instance, a new name must be provided', 'error');
+      showNotification('When cloning to the same instance, please provide a new name for the application', 'error');
+      return;
+    }
+
+    // If this is the initial call (not from schema confirmation), check schema
+    if (!copySchema && pendingMigration === null) {
+      // Store the migration request
+      setPendingMigration({ copySchema: false });
+
+      // Show schema confirmation modal
+      setShowSchemaModal(true);
       return;
     }
 
     setIsMigrating(true);
+    setShowSchemaModal(false);
 
     try {
       const token = localStorage.getItem('authToken');
@@ -1832,7 +1870,8 @@ const MigrationView = ({ sites, showNotification }) => {
           sourceId: parseInt(sourceInstance, 10),
           destId: parseInt(destInstance, 10),
           assets: selectedApplications.map(id => ({ id, type: 'application' })),
-          newName: newName.trim() || undefined
+          newName: newName.trim() || undefined,
+          copySchema: copySchema
         })
       });
 
@@ -1841,6 +1880,7 @@ const MigrationView = ({ sites, showNotification }) => {
         showNotification('Migration completed successfully!', 'success');
         setSelectedApplications([]);
         setNewName('');
+        setPendingMigration(null);
       } else {
         const error = await response.json();
         showNotification(error.error?.message || 'Migration failed', 'error');
@@ -1862,13 +1902,25 @@ const MigrationView = ({ sites, showNotification }) => {
         </div>
       </div>
 
-      {talonInstances.length < 2 && (
+      {talonInstances.length === 0 && (
         <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-4">
           <div className="flex items-start space-x-2">
             <AlertTriangle size={16} className="text-yellow-400 flex-shrink-0 mt-0.5" />
             <p className="text-sm text-yellow-200">
-              You need at least 2 Talon.One instances to use the Migration Hub. Please add more instances first.
+              You need at least 1 Talon.One instance to use the Migration Hub. You can clone applications within the same instance or migrate between different instances.
             </p>
+          </div>
+        </div>
+      )}
+
+      {sourceInstance === destInstance && (
+        <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4">
+          <div className="flex items-start space-x-2">
+            <Copy size={16} className="text-blue-400 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm text-blue-200 font-medium">Cloning to Same Instance</p>
+              <p className="text-xs text-blue-300 mt-1">You must provide a new name for the cloned application to avoid conflicts.</p>
+            </div>
           </div>
         </div>
       )}
@@ -1933,24 +1985,30 @@ const MigrationView = ({ sites, showNotification }) => {
           </div>
 
           {sourceInstance === destInstance && (
-            <div className="w-full">
-              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">New App Name</label>
+            <div className="w-full bg-blue-500/5 border border-blue-500/20 rounded-lg p-3">
+              <label className="block text-xs font-bold text-blue-300 uppercase tracking-wider mb-2 flex items-center">
+                <Copy size={12} className="mr-1" />
+                New Application Name *
+              </label>
               <input
                 type="text"
-                className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Required for same instance"
+                className="w-full bg-slate-900 border border-blue-500/30 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-slate-500"
+                placeholder="e.g., My App - Copy"
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
               />
+              <p className="text-[10px] text-blue-300 mt-1">Required when cloning to same instance</p>
             </div>
           )}
 
           <button
             onClick={handleMigrate}
-            disabled={isMigrating || selectedApplications.length === 0 || !talonInstances.length}
+            disabled={isMigrating || selectedApplications.length === 0 || !talonInstances.length || (sourceInstance === destInstance && !newName.trim())}
             className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-slate-600 disabled:cursor-not-allowed text-white p-3 rounded-lg shadow-lg transition-all active:scale-95 flex flex-col items-center gap-1"
           >
-            <span className="font-bold text-sm">{isMigrating ? 'Migrating...' : 'Migrate Selected'}</span>
+            <span className="font-bold text-sm">
+              {isMigrating ? 'Migrating...' : sourceInstance === destInstance ? 'Clone Selected' : 'Migrate Selected'}
+            </span>
             <span className="text-[10px] opacity-80">
               {selectedApplications.length} App{selectedApplications.length !== 1 ? 's' : ''} Selected
             </span>
@@ -1989,6 +2047,59 @@ const MigrationView = ({ sites, showNotification }) => {
            </div>
         </div>
       </div>
+
+      {/* Schema Confirmation Modal */}
+      {showSchemaModal && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/90 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 w-[500px] shadow-2xl">
+            <h3 className="text-lg font-bold text-white mb-4 flex items-center">
+              <Database className="mr-2 text-blue-400" size={20} />
+              Schema Check
+            </h3>
+
+            <div className="space-y-4">
+              <p className="text-sm text-slate-300">
+                Before migrating, would you like to copy the schema (attributes, custom fields) from the source application to ensure the destination has all required fields?
+              </p>
+
+              <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-4">
+                <div className="flex items-start space-x-3">
+                  <AlertTriangle size={16} className="text-yellow-400 flex-shrink-0 mt-0.5" />
+                  <div className="text-xs text-slate-400 space-y-2">
+                    <p><strong className="text-slate-300">Copy Schema:</strong> Ensures destination has all required attributes. Recommended for cross-instance migrations.</p>
+                    <p><strong className="text-slate-300">Skip Schema Copy:</strong> Only migrates the application data. Use if destination already has the correct schema.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 mt-6">
+                <button
+                  onClick={() => {
+                    setShowSchemaModal(false);
+                    setPendingMigration(null);
+                  }}
+                  className="px-4 py-2 text-sm text-slate-400 hover:text-white transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handleMigrate(false)}
+                  className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-sm font-medium transition-colors"
+                >
+                  Skip Schema Copy
+                </button>
+                <button
+                  onClick={() => handleMigrate(true)}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center"
+                >
+                  <Copy size={14} className="mr-2" />
+                  Copy Schema & Migrate
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

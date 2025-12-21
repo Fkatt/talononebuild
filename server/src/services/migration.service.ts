@@ -17,10 +17,11 @@ interface MigrateParams {
   assets: Asset[];
   userId: number;
   newName?: string;
+  copySchema?: boolean;
 }
 
 export const migrate = async (params: MigrateParams) => {
-  const { sourceId, destId, assets, userId, newName } = params;
+  const { sourceId, destId, assets, userId, newName, copySchema = true } = params;
 
   try {
     // Get source and destination instances
@@ -51,7 +52,7 @@ export const migrate = async (params: MigrateParams) => {
     for (const asset of assets) {
       try {
         if (source.type === 'talon') {
-          await migrateTalonAsset(source, dest, asset, newName);
+          await migrateTalonAsset(source, dest, asset, newName, copySchema);
         } else if (source.type === 'contentful') {
           await migrateContentfulAsset(source, dest, asset);
         }
@@ -103,7 +104,7 @@ export const migrate = async (params: MigrateParams) => {
 };
 
 // Migrate Talon.One asset
-async function migrateTalonAsset(source: any, dest: any, asset: Asset, newName?: string) {
+async function migrateTalonAsset(source: any, dest: any, asset: Asset, newName?: string, copySchema: boolean = true) {
   // Extract the actual application ID from the asset ID (format: "app-123")
   const appIdStr = typeof asset.id === 'string' && asset.id.startsWith('app-')
     ? asset.id.substring(4)
@@ -188,8 +189,13 @@ async function migrateTalonAsset(source: any, dest: any, asset: Asset, newName?:
   // Now clone campaigns, rules, coupons, referrals, and attributes
   await cloneCampaignsAndRules(source, dest, appId, newAppId);
 
-  // Clone application-level attributes
-  await cloneApplicationAttributes(source, dest, appId, newAppId);
+  // Clone application-level attributes if requested
+  if (copySchema) {
+    logger.info(`Copying schema attributes from app ${appId} to app ${newAppId}`);
+    await cloneApplicationAttributes(source, dest, appId, newAppId);
+  } else {
+    logger.info(`Skipping schema copy as requested by user`);
+  }
 }
 
 // Clone campaigns and rules from source application to destination application
