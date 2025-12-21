@@ -36,12 +36,14 @@ const migration_routes_1 = __importDefault(require("./routes/migration.routes"))
 const backup_routes_1 = __importDefault(require("./routes/backup.routes"));
 const ai_routes_1 = __importDefault(require("./routes/ai.routes"));
 const admin_routes_1 = __importDefault(require("./routes/admin.routes"));
+const vertical_routes_1 = __importDefault(require("./routes/vertical.routes"));
 app.use('/auth', auth_routes_1.default);
 app.use('/instances', instance_routes_1.default);
 app.use('/migrate', migration_routes_1.default);
 app.use('/backups', backup_routes_1.default);
 app.use('/ai', ai_routes_1.default);
 app.use('/admin', admin_routes_1.default);
+app.use('/verticals', vertical_routes_1.default);
 app.use((err, _req, res, _next) => {
     console.error('Error:', err);
     res.status(500).json({
@@ -61,11 +63,13 @@ app.use((_req, res) => {
         },
     });
 });
+const vertical_service_1 = require("./services/vertical.service");
 const PORT = config_1.default.server.port;
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
     console.log(`🚀 TalonForge API Server running on port ${PORT}`);
     console.log(`📝 Environment: ${config_1.default.server.nodeEnv}`);
     console.log(`🔗 Health check: http://localhost:${PORT}/health`);
+    await (0, vertical_service_1.seedDefaultVerticals)();
 });
 exports.default = app;
 //# sourceMappingURL=index.js.map

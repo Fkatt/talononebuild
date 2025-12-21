@@ -12,6 +12,7 @@ interface CreateInstanceData {
     url: string;
     credentials: InstanceCredentials;
     bundleId?: string;
+    vertical?: string;
     userId: number;
 }
 interface UpdateInstanceData {
@@ -20,6 +21,7 @@ interface UpdateInstanceData {
     url?: string;
     credentials?: InstanceCredentials;
     bundleId?: string;
+    vertical?: string;
 }
 interface ConnectionTestParams {
     type: 'talon' | 'contentful';
@@ -33,6 +35,8 @@ export declare const getUserInstances: (userId: number) => Promise<{
     region: string;
     url: string;
     bundleId: string | null;
+    vertical: string | null;
+    status: string;
     createdAt: Date;
     updatedAt: Date;
 }[]>;
@@ -43,6 +47,7 @@ export declare const getInstance: (instanceId: number, userId: number) => Promis
     region: string;
     url: string;
     bundleId: string | null;
+    vertical: string | null;
     credentials: any;
     createdAt: Date;
     updatedAt: Date;
@@ -54,6 +59,8 @@ export declare const createInstance: (data: CreateInstanceData) => Promise<{
     region: string;
     url: string;
     bundleId: string | null;
+    vertical: string | null;
+    status: string;
     createdAt: Date;
 }>;
 export declare const updateInstance: (instanceId: number, userId: number, data: UpdateInstanceData) => Promise<{
@@ -63,6 +70,8 @@ export declare const updateInstance: (instanceId: number, userId: number, data: 
     region: string;
     url: string;
     bundleId: string | null;
+    vertical: string | null;
+    status: string;
     updatedAt: Date;
 }>;
 export declare const deleteInstance: (instanceId: number, userId: number) => Promise<{
@@ -71,6 +80,7 @@ export declare const deleteInstance: (instanceId: number, userId: number) => Pro
 export declare const testConnection: (params: ConnectionTestParams) => Promise<{
     success: boolean;
     error?: string;
+    applications?: any[];
 }>;
 export declare const updateInstanceBundle: (instanceId: number, userId: number, bundleId: string | null) => Promise<{
     id: number;

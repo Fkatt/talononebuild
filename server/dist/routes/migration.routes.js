@@ -13,13 +13,13 @@ router.use(auth_1.authenticateToken);
 router.post('/', async (req, res) => {
     try {
         const userId = req.user.id;
-        const { sourceId, destId, assets } = req.body;
+        const { sourceId, destId, assets, newName } = req.body;
         if (!sourceId || !destId || !assets || !Array.isArray(assets)) {
             res.status(400).json((0, response_1.errorResponse)(response_1.ErrorCodes.VALIDATION_ERROR, 'Missing required fields: sourceId, destId, assets (array)'));
             return;
         }
-        if (sourceId === destId) {
-            res.status(400).json((0, response_1.errorResponse)(response_1.ErrorCodes.VALIDATION_ERROR, 'Source and destination must be different'));
+        if (sourceId === destId && !newName) {
+            res.status(400).json((0, response_1.errorResponse)(response_1.ErrorCodes.VALIDATION_ERROR, 'When cloning to the same instance, a new name must be provided'));
             return;
         }
         const result = await (0, migration_service_1.migrate)({
@@ -27,6 +27,7 @@ router.post('/', async (req, res) => {
             destId,
             assets,
             userId,
+            newName,
         });
         res.json((0, response_1.successResponse)(result));
     }

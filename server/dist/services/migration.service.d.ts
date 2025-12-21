@@ -7,6 +7,8 @@ interface MigrateParams {
     destId: number;
     assets: Asset[];
     userId: number;
+    newName?: string;
+    copySchema?: boolean;
 }
 export declare const migrate: (params: MigrateParams) => Promise<{
     migrationId: number;

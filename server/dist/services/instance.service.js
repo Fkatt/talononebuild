@@ -20,6 +20,8 @@ const getUserInstances = async (userId) => {
         region: instance.region,
         url: instance.url,
         bundleId: instance.bundleId,
+        vertical: instance.vertical,
+        status: instance.status,
         createdAt: instance.createdAt,
         updatedAt: instance.updatedAt,
     }));
@@ -43,6 +45,7 @@ const getInstance = async (instanceId, userId) => {
         region: instance.region,
         url: instance.url,
         bundleId: instance.bundleId,
+        vertical: instance.vertical,
         credentials: decryptedCredentials,
         createdAt: instance.createdAt,
         updatedAt: instance.updatedAt,
@@ -59,6 +62,7 @@ const createInstance = async (data) => {
             url: data.url,
             encryptedCredentials,
             bundleId: data.bundleId,
+            vertical: data.vertical,
             userId: data.userId,
         },
     });
@@ -70,6 +74,8 @@ const createInstance = async (data) => {
         region: instance.region,
         url: instance.url,
         bundleId: instance.bundleId,
+        vertical: instance.vertical,
+        status: instance.status,
         createdAt: instance.createdAt,
     };
 };
@@ -86,6 +92,7 @@ const updateInstance = async (instanceId, userId, data) => {
         region: data.region,
         url: data.url,
         bundleId: data.bundleId,
+        vertical: data.vertical,
     };
     if (data.credentials) {
         updateData.encryptedCredentials = (0, encryption_1.encrypt)(JSON.stringify(data.credentials));
@@ -102,6 +109,8 @@ const updateInstance = async (instanceId, userId, data) => {
         region: updated.region,
         url: updated.url,
         bundleId: updated.bundleId,
+        vertical: updated.vertical,
+        status: updated.status,
         updatedAt: updated.updatedAt,
     };
 };
@@ -124,15 +133,31 @@ const testConnection = async (params) => {
     const { type, url, credentials } = params;
     try {
         if (type === 'talon') {
-            const response = await axios_1.default.get(`${url}/v1/applications`, {
-                headers: {
-                    Authorization: `Bearer ${credentials.apiKey}`,
-                },
-                timeout: 10000,
-            });
+            let response;
+            try {
+                response = await axios_1.default.get(`${url}/v1/applications`, {
+                    headers: {
+                        Authorization: `ManagementKey-v1 ${credentials.apiKey}`,
+                    },
+                    timeout: 10000,
+                });
+            }
+            catch (appError) {
+                logger_1.default.warn(`Applications endpoint failed: ${appError.response?.data?.message || appError.message}`);
+                response = await axios_1.default.get(`${url}/v1/accounts`, {
+                    headers: {
+                        Authorization: `ManagementKey-v1 ${credentials.apiKey}`,
+                    },
+                    timeout: 10000,
+                });
+            }
             if (response.status === 200) {
                 logger_1.default.info('Talon.One connection test successful');
-                return { success: true };
+                const applications = response.data?.data?.map((app) => ({
+                    id: app.id,
+                    name: app.attributes?.name || `Application ${app.id}`,
+                })) || [];
+                return { success: true, applications };
             }
         }
         else if (type === 'contentful') {

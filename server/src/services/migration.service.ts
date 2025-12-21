@@ -509,10 +509,14 @@ async function cloneCoupons(
           updatePayload.reservationLimit = sourceCoupon.reservationLimit;
         }
         if (sourceCoupon.startDate) {
+          // Pass through the exact date from source without conversion
           updatePayload.startDate = sourceCoupon.startDate;
+          logger.info(`Coupon ${sourceCoupon.value} startDate: ${sourceCoupon.startDate}`);
         }
         if (sourceCoupon.expiryDate) {
+          // Pass through the exact date from source without conversion
           updatePayload.expiryDate = sourceCoupon.expiryDate;
+          logger.info(`Coupon ${sourceCoupon.value} expiryDate: ${sourceCoupon.expiryDate}`);
         }
         if (sourceCoupon.attributes) {
           updatePayload.attributes = sourceCoupon.attributes;
@@ -520,6 +524,7 @@ async function cloneCoupons(
 
         // Only update if there are properties to set
         if (Object.keys(updatePayload).length > 0) {
+          logger.info(`Updating coupon ${sourceCoupon.value} with payload:`, JSON.stringify(updatePayload, null, 2));
           await axios.put(
             `${dest.url}/v1/applications/${destAppId}/campaigns/${destCampaignId}/coupons/${destCoupon.id}`,
             updatePayload,

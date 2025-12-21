@@ -180,7 +180,7 @@ router.post('/upload', async (req: AuthRequest, res: Response): Promise<void> =>
     const backup = await prisma.backup.create({
       data: {
         name,
-        instanceId: instanceId ? parseInt(instanceId.toString(), 10) : undefined,
+        instanceId: instanceId ? parseInt(instanceId.toString(), 10) : null,
         data,
         size: backupSize,
         vertical: vertical || 'Uploaded',
