@@ -1478,11 +1478,16 @@ const MigrationView = ({ sites, showNotification }) => {
         const data = await response.json();
         setApplications(data.data || []);
       } else {
-        showNotification('Failed to fetch applications', 'error');
+        const error = await response.json();
+        const errorMsg = error.error?.message || 'Failed to fetch applications';
+        console.error('Application fetch error:', error);
+        showNotification(errorMsg, 'error');
+        setApplications([]);
       }
     } catch (error) {
       console.error('Failed to fetch applications:', error);
-      showNotification('Failed to fetch applications', 'error');
+      showNotification('Failed to fetch applications: ' + error.message, 'error');
+      setApplications([]);
     } finally {
       setLoading(false);
     }
