@@ -16,7 +16,7 @@ router.use(authenticateToken);
 router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const userId = req.user!.id;
-    const { sourceId, destId, assets, newName } = req.body;
+    const { sourceId, destId, assets, newName, appNames, copySchema } = req.body;
 
     // Validation
     if (!sourceId || !destId || !assets || !Array.isArray(assets)) {
@@ -29,12 +29,12 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
       return;
     }
 
-    // If cloning to same instance, require a new name
-    if (sourceId === destId && !newName) {
+    // If cloning to same instance, require names (either newName or appNames)
+    if (sourceId === destId && !newName && !appNames) {
       res.status(400).json(
         errorResponse(
           ErrorCodes.VALIDATION_ERROR,
-          'When cloning to the same instance, a new name must be provided'
+          'When cloning to the same instance, new names must be provided'
         )
       );
       return;
@@ -46,6 +46,8 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
       assets,
       userId,
       newName,
+      appNames,
+      copySchema,
     });
 
     res.json(successResponse(result));
