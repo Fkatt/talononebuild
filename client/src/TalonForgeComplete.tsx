@@ -876,11 +876,52 @@ const InstanceManagerView = ({ sites, protectedMode, showNotification, setSites 
   const [newInstance, setNewInstance] = useState({
     name: '',
     type: 'talon',
+    region: 'US',
     url: '',
     vertical: 'Retail',
-    apiKey: '',
-    appId: ''
+    apiKey: ''
   });
+
+  const handleTestConnection = async (instanceId) => {
+    try {
+      const token = localStorage.getItem('authToken');
+      if (!token) {
+        showNotification('Authentication required', 'error');
+        return;
+      }
+
+      showNotification('Testing connection...', 'info');
+
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/instances/${instanceId}/test`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        if (data.data.success) {
+          // Update instance status to online
+          setSites(sites.map(s => s.id === instanceId ? { ...s, status: 'online' } : s));
+          showNotification('Connection successful!', 'success');
+        } else {
+          // Update instance status to error
+          setSites(sites.map(s => s.id === instanceId ? { ...s, status: 'error' } : s));
+          showNotification(`Connection failed: ${data.data.error || 'Unknown error'}`, 'error');
+        }
+      } else {
+        setSites(sites.map(s => s.id === instanceId ? { ...s, status: 'error' } : s));
+        const errorMsg = data.error?.message || 'Failed to test connection';
+        showNotification(errorMsg, 'error');
+      }
+    } catch (error) {
+      console.error('Test connection error:', error);
+      setSites(sites.map(s => s.id === instanceId ? { ...s, status: 'error' } : s));
+      showNotification('Failed to test connection: ' + error.message, 'error');
+    }
+  };
 
   const handleDeleteInstance = async (instanceId) => {
     try {
@@ -944,17 +985,64 @@ const InstanceManagerView = ({ sites, protectedMode, showNotification, setSites 
     setSites(updatedSites);
   };
 
-  const handleCreateInstance = () => {
-    const newSite = {
-      id: Date.now(),
-      ...newInstance,
-      status: 'online',
-      linkedResource: null,
-      bundle: null
-    };
-    setSites([...sites, newSite]);
-    setShowAddInstanceModal(false);
-    showNotification(`New ${newInstance.type} instance created!`);
+  const handleCreateInstance = async () => {
+    try {
+      const token = localStorage.getItem('authToken');
+      if (!token) {
+        showNotification('Authentication required', 'error');
+        return;
+      }
+
+      // Validate required fields
+      if (!newInstance.name || !newInstance.url || !newInstance.apiKey) {
+        showNotification('Please fill in all required fields', 'error');
+        return;
+      }
+
+      showNotification('Testing connection...', 'info');
+
+      // Create the instance (backend will test connection automatically)
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/instances`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          name: newInstance.name,
+          type: newInstance.type,
+          region: newInstance.region,
+          url: newInstance.url,
+          credentials: {
+            apiKey: newInstance.apiKey
+          },
+          vertical: newInstance.vertical
+        })
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        // Add to local state
+        setSites([...sites, data.data]);
+        setShowAddInstanceModal(false);
+        setNewInstance({
+          name: '',
+          type: 'talon',
+          region: 'US',
+          url: '',
+          vertical: 'Retail',
+          apiKey: ''
+        });
+        showNotification(`Instance "${newInstance.name}" created successfully!`, 'success');
+      } else {
+        const errorMsg = data.error?.message || 'Failed to create instance';
+        showNotification(errorMsg, 'error');
+      }
+    } catch (error) {
+      console.error('Create instance error:', error);
+      showNotification('Failed to create instance: ' + error.message, 'error');
+    }
   };
 
   const toggleUnassignedSelection = (id) => {
@@ -1109,6 +1197,16 @@ const InstanceManagerView = ({ sites, protectedMode, showNotification, setSites 
                           </div>
                           
                           <div className="flex space-x-3 mt-6">
+                             <button
+                               onClick={(e) => {
+                                 e.stopPropagation();
+                                 handleTestConnection(site.id);
+                               }}
+                               className="flex-1 bg-green-600/10 hover:bg-green-600/20 text-green-400 border border-green-600/20 py-2 px-4 rounded text-sm font-medium transition-colors flex items-center justify-center"
+                             >
+                               <CheckCircle2 size={14} className="mr-2" />
+                               Test Connection
+                             </button>
                              <button className="flex-1 bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 border border-blue-600/20 py-2 px-4 rounded text-sm font-medium transition-colors">
                                Edit Configuration
                              </button>
@@ -1386,29 +1484,28 @@ const InstanceManagerView = ({ sites, protectedMode, showNotification, setSites 
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">API Key / Token</label>
-                  <input 
-                    type="password" 
-                    className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm text-white font-mono"
-                    placeholder="sk_..."
-                    value={newInstance.apiKey}
-                    onChange={(e) => setNewInstance({...newInstance, apiKey: e.target.value})}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
-                    {newInstance.type === 'talon' ? 'Application ID' : 'Space ID'}
-                  </label>
-                  <input 
-                    type="text" 
-                    className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm text-white font-mono"
-                    placeholder="ID..."
-                    value={newInstance.appId}
-                    onChange={(e) => setNewInstance({...newInstance, appId: e.target.value})}
-                  />
-                </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">API Key / Token</label>
+                <input
+                  type="password"
+                  className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm text-white font-mono"
+                  placeholder="sk_..."
+                  value={newInstance.apiKey}
+                  onChange={(e) => setNewInstance({...newInstance, apiKey: e.target.value})}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Region</label>
+                <select
+                  className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm text-white"
+                  value={newInstance.region}
+                  onChange={(e) => setNewInstance({...newInstance, region: e.target.value})}
+                >
+                  <option value="US">United States</option>
+                  <option value="EU">Europe</option>
+                  <option value="AP">Asia Pacific</option>
+                </select>
               </div>
 
               <div>
