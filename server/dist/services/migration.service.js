@@ -10,8 +10,20 @@ const logger_1 = __importDefault(require("../utils/logger"));
 const axios_1 = __importDefault(require("axios"));
 const migrate = async (params) => {
     const { sourceId, destId, assets, userId, newName, copySchema = true, appNames } = params;
+    logger_1.default.info('Migrate service called with params:', {
+        sourceId,
+        destId,
+        userId,
+        userIdType: typeof userId,
+        assetsCount: assets.length,
+        newName,
+        appNames,
+        copySchema
+    });
     try {
+        logger_1.default.info(`Fetching source instance ${sourceId} for user ${userId}`);
         const source = await (0, instance_service_1.getInstance)(sourceId, userId);
+        logger_1.default.info(`Fetching dest instance ${destId} for user ${userId}`);
         const dest = await (0, instance_service_1.getInstance)(destId, userId);
         if (source.type !== dest.type) {
             throw new Error('Source and destination must be the same type');
@@ -297,7 +309,8 @@ async function cloneCoupons(source, dest, sourceAppId, sourceCampaignId, destApp
         const coupons = couponsResponse.data.data || [];
         logger_1.default.info(`Found ${coupons.length} coupons to clone`);
         if (coupons.length > 0) {
-            logger_1.default.info(`Sample source coupon data:`, JSON.stringify(coupons[0], null, 2));
+            console.log(`SOURCE COUPON DATA:`, JSON.stringify(coupons[0], null, 2));
+            logger_1.default.info(`Sample source coupon - value: ${coupons[0].value}, expiryDate: ${coupons[0].expiryDate}, startDate: ${coupons[0].startDate}`);
         }
         if (coupons.length === 0) {
             return;
@@ -363,23 +376,25 @@ async function cloneCoupons(source, dest, sourceAppId, sourceCampaignId, destApp
                 }
                 if (sourceCoupon.startDate) {
                     updatePayload.startDate = sourceCoupon.startDate;
-                    logger_1.default.info(`Coupon ${sourceCoupon.value} startDate: ${sourceCoupon.startDate}`);
+                    console.log(`Coupon ${sourceCoupon.value} startDate: ${sourceCoupon.startDate}`);
                 }
                 if (sourceCoupon.expiryDate) {
                     updatePayload.expiryDate = sourceCoupon.expiryDate;
-                    logger_1.default.info(`Coupon ${sourceCoupon.value} expiryDate: ${sourceCoupon.expiryDate}`);
+                    console.log(`Coupon ${sourceCoupon.value} expiryDate: ${sourceCoupon.expiryDate}`);
                 }
                 if (sourceCoupon.attributes) {
                     updatePayload.attributes = sourceCoupon.attributes;
                 }
                 if (Object.keys(updatePayload).length > 0) {
-                    logger_1.default.info(`Updating coupon ${sourceCoupon.value} with payload:`, JSON.stringify(updatePayload, null, 2));
-                    await axios_1.default.put(`${dest.url}/v1/applications/${destAppId}/campaigns/${destCampaignId}/coupons/${destCoupon.id}`, updatePayload, {
+                    logger_1.default.info(`Updating coupon ${sourceCoupon.value} with payload: ${JSON.stringify(updatePayload)}`);
+                    console.log(`COUPON UPDATE PAYLOAD for ${sourceCoupon.value}:`, JSON.stringify(updatePayload, null, 2));
+                    const updateResponse = await axios_1.default.put(`${dest.url}/v1/applications/${destAppId}/campaigns/${destCampaignId}/coupons/${destCoupon.id}`, updatePayload, {
                         headers: {
                             Authorization: `ManagementKey-v1 ${dest.credentials.apiKey}`,
                             'Content-Type': 'application/json',
                         },
                     });
+                    console.log(`COUPON UPDATE RESPONSE for ${sourceCoupon.value}:`, JSON.stringify(updateResponse.data, null, 2));
                     logger_1.default.info(`Updated properties for coupon ${sourceCoupon.value} (ID: ${destCoupon.id})`);
                 }
             }

@@ -1899,6 +1899,9 @@ const MigrationView = ({ sites, showNotification }) => {
         payload.appNames = appNames;
       }
 
+      console.log('Migration payload being sent:', JSON.stringify(payload, null, 2));
+      console.log('sourceInstance:', sourceInstance, 'destInstance:', destInstance);
+
       const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/migrate`, {
         method: 'POST',
         headers: {

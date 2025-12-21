@@ -24,9 +24,22 @@ interface MigrateParams {
 export const migrate = async (params: MigrateParams) => {
   const { sourceId, destId, assets, userId, newName, copySchema = true, appNames } = params;
 
+  logger.info('Migrate service called with params:', {
+    sourceId,
+    destId,
+    userId,
+    userIdType: typeof userId,
+    assetsCount: assets.length,
+    newName,
+    appNames,
+    copySchema
+  });
+
   try {
     // Get source and destination instances
+    logger.info(`Fetching source instance ${sourceId} for user ${userId}`);
     const source = await getInstance(sourceId, userId);
+    logger.info(`Fetching dest instance ${destId} for user ${userId}`);
     const dest = await getInstance(destId, userId);
 
     // Verify both instances are the same type
@@ -424,7 +437,8 @@ async function cloneCoupons(
 
     // Log the first coupon to see date format
     if (coupons.length > 0) {
-      logger.info(`Sample source coupon data:`, JSON.stringify(coupons[0], null, 2));
+      console.log(`SOURCE COUPON DATA:`, JSON.stringify(coupons[0], null, 2));
+      logger.info(`Sample source coupon - value: ${coupons[0].value}, expiryDate: ${coupons[0].expiryDate}, startDate: ${coupons[0].startDate}`);
     }
 
     if (coupons.length === 0) {
@@ -521,14 +535,14 @@ async function cloneCoupons(
           updatePayload.reservationLimit = sourceCoupon.reservationLimit;
         }
         if (sourceCoupon.startDate) {
-          // Pass through the exact date from source without conversion
+          // Copy exact value from source - no conversion needed
           updatePayload.startDate = sourceCoupon.startDate;
-          logger.info(`Coupon ${sourceCoupon.value} startDate: ${sourceCoupon.startDate}`);
+          console.log(`Coupon ${sourceCoupon.value} startDate: ${sourceCoupon.startDate}`);
         }
         if (sourceCoupon.expiryDate) {
-          // Pass through the exact date from source without conversion
+          // Copy exact value from source - no conversion needed
           updatePayload.expiryDate = sourceCoupon.expiryDate;
-          logger.info(`Coupon ${sourceCoupon.value} expiryDate: ${sourceCoupon.expiryDate}`);
+          console.log(`Coupon ${sourceCoupon.value} expiryDate: ${sourceCoupon.expiryDate}`);
         }
         if (sourceCoupon.attributes) {
           updatePayload.attributes = sourceCoupon.attributes;
@@ -536,8 +550,10 @@ async function cloneCoupons(
 
         // Only update if there are properties to set
         if (Object.keys(updatePayload).length > 0) {
-          logger.info(`Updating coupon ${sourceCoupon.value} with payload:`, JSON.stringify(updatePayload, null, 2));
-          await axios.put(
+          logger.info(`Updating coupon ${sourceCoupon.value} with payload: ${JSON.stringify(updatePayload)}`);
+          console.log(`COUPON UPDATE PAYLOAD for ${sourceCoupon.value}:`, JSON.stringify(updatePayload, null, 2));
+
+          const updateResponse = await axios.put(
             `${dest.url}/v1/applications/${destAppId}/campaigns/${destCampaignId}/coupons/${destCoupon.id}`,
             updatePayload,
             {
@@ -547,6 +563,8 @@ async function cloneCoupons(
               },
             }
           );
+
+          console.log(`COUPON UPDATE RESPONSE for ${sourceCoupon.value}:`, JSON.stringify(updateResponse.data, null, 2));
           logger.info(`Updated properties for coupon ${sourceCoupon.value} (ID: ${destCoupon.id})`);
         }
       } catch (error: any) {

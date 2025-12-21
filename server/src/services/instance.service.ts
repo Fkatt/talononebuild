@@ -64,6 +64,8 @@ export const getUserInstances = async (userId: number) => {
 
 // Get single instance by ID
 export const getInstance = async (instanceId: number, userId: number) => {
+  logger.info(`getInstance called with instanceId=${instanceId} (type: ${typeof instanceId}), userId=${userId} (type: ${typeof userId})`);
+
   const instance = await prisma.instance.findFirst({
     where: {
       id: instanceId,

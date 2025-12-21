@@ -16,6 +16,12 @@ const authenticateToken = (req, res, next) => {
     }
     try {
         const decoded = jsonwebtoken_1.default.verify(token, config_1.default.security.jwtSecret);
+        console.log('JWT decoded user:', {
+            id: decoded.id,
+            email: decoded.email,
+            role: decoded.role,
+            idType: typeof decoded.id
+        });
         req.user = decoded;
         next();
     }

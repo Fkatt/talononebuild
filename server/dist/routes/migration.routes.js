@@ -14,14 +14,40 @@ router.post('/', async (req, res) => {
     try {
         const userId = req.user.id;
         const { sourceId, destId, assets, newName, appNames, copySchema } = req.body;
+        console.log('=== MIGRATION REQUEST RECEIVED ===');
+        console.log('userId:', userId);
+        console.log('sourceId:', sourceId, 'destId:', destId);
+        console.log('assets:', JSON.stringify(assets));
+        console.log('newName:', newName);
+        console.log('appNames:', JSON.stringify(appNames));
+        console.log('copySchema:', copySchema);
+        logger_1.default.info('Migration request received:', {
+            userId,
+            sourceId,
+            destId,
+            assetsCount: assets?.length,
+            newName,
+            appNames,
+            copySchema,
+            sameInstance: sourceId === destId
+        });
         if (!sourceId || !destId || !assets || !Array.isArray(assets)) {
+            logger_1.default.warn('Validation failed: missing required fields');
             res.status(400).json((0, response_1.errorResponse)(response_1.ErrorCodes.VALIDATION_ERROR, 'Missing required fields: sourceId, destId, assets (array)'));
             return;
         }
         if (sourceId === destId && !newName && !appNames) {
-            res.status(400).json((0, response_1.errorResponse)(response_1.ErrorCodes.VALIDATION_ERROR, 'When cloning to the same instance, new names must be provided'));
+            logger_1.default.warn('Validation failed: same instance but no names provided', {
+                newName,
+                appNames,
+                hasNewName: !!newName,
+                hasAppNames: !!appNames,
+                appNamesKeys: appNames ? Object.keys(appNames) : null
+            });
+            res.status(400).json((0, response_1.errorResponse)(response_1.ErrorCodes.VALIDATION_ERROR, `DEBUG: newName=${newName}, appNames=${JSON.stringify(appNames)}, hasAppNames=${!!appNames}, type=${typeof appNames}, keys=${appNames ? Object.keys(appNames).length : 0}`));
             return;
         }
+        logger_1.default.info('Validation passed, calling migrate service');
         const result = await (0, migration_service_1.migrate)({
             sourceId,
             destId,

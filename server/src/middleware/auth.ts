@@ -35,6 +35,14 @@ export const authenticateToken = (
       role: string;
     };
 
+    // Log decoded user info for debugging
+    console.log('JWT decoded user:', {
+      id: decoded.id,
+      email: decoded.email,
+      role: decoded.role,
+      idType: typeof decoded.id
+    });
+
     (req as AuthRequest).user = decoded;
     next();
   } catch (error) {
