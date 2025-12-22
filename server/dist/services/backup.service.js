@@ -210,6 +210,67 @@ async function fetchTalonData(instance) {
         logger_1.default.error('Error fetching Talon data:', error);
         throw error;
     }
+    try {
+        const loyaltyResponse = await axios_1.default.get(`${instance.url}/v1/loyalty_programs`, {
+            headers: { Authorization: `ManagementKey-v1 ${instance.credentials.apiKey}` },
+            params: { pageSize: 1000 },
+        });
+        const programs = loyaltyResponse.data?.data || [];
+        data.loyaltyPrograms = [];
+        for (const program of programs) {
+            const programData = { program };
+            try {
+                const tiersResponse = await axios_1.default.get(`${instance.url}/v1/loyalty_programs/${program.id}/tiers`, { headers: { Authorization: `ManagementKey-v1 ${instance.credentials.apiKey}` } });
+                programData.tiers = tiersResponse.data?.data || [];
+            }
+            catch (error) {
+                logger_1.default.error(`Error fetching tiers for program ${program.id}:`, error);
+                programData.tiers = [];
+            }
+            data.loyaltyPrograms.push(programData);
+        }
+        logger_1.default.info(`Fetched ${programs.length} loyalty programs`);
+    }
+    catch (error) {
+        logger_1.default.error('Error fetching loyalty programs:', error);
+        data.loyaltyPrograms = [];
+    }
+    try {
+        const giveawaysResponse = await axios_1.default.get(`${instance.url}/v1/giveaways/pools`, {
+            headers: { Authorization: `ManagementKey-v1 ${instance.credentials.apiKey}` },
+            params: { pageSize: 1000 },
+        });
+        data.giveaways = giveawaysResponse.data?.data || [];
+        logger_1.default.info(`Fetched ${data.giveaways.length} giveaway pools for backup`);
+    }
+    catch (error) {
+        logger_1.default.error('Error fetching giveaways:', error);
+        data.giveaways = [];
+    }
+    try {
+        const templatesResponse = await axios_1.default.get(`${instance.url}/v1/campaign_templates`, {
+            headers: { Authorization: `ManagementKey-v1 ${instance.credentials.apiKey}` },
+            params: { pageSize: 1000 },
+        });
+        data.campaignTemplates = templatesResponse.data?.data || [];
+        logger_1.default.info(`Fetched ${data.campaignTemplates.length} campaign templates`);
+    }
+    catch (error) {
+        logger_1.default.error('Error fetching campaign templates:', error);
+        data.campaignTemplates = [];
+    }
+    try {
+        const audiencesResponse = await axios_1.default.get(`${instance.url}/v1/audiences`, {
+            headers: { Authorization: `ManagementKey-v1 ${instance.credentials.apiKey}` },
+            params: { pageSize: 1000 },
+        });
+        data.audiences = audiencesResponse.data?.data || [];
+        logger_1.default.info(`Fetched ${data.audiences.length} audiences`);
+    }
+    catch (error) {
+        logger_1.default.error('Error fetching audiences:', error);
+        data.audiences = [];
+    }
     return data;
 }
 async function fetchContentfulData(instance) {
@@ -289,6 +350,30 @@ async function restoreTalonData(instance, backupData, newName) {
         logger_1.default.info(`Successfully created application with ID: ${newAppId}`);
         await restoreCampaignsAndRules(instance, appDetails.campaigns || [], newAppId);
         await restoreApplicationAttributes(instance, appDetails.attributes || [], newAppId);
+        if (backupData.loyaltyPrograms && backupData.loyaltyPrograms.length > 0) {
+            logger_1.default.info(`Restoring ${backupData.loyaltyPrograms.length} loyalty programs`);
+            for (const programData of backupData.loyaltyPrograms) {
+                await restoreLoyaltyProgram(instance, programData);
+            }
+        }
+        if (backupData.giveaways && backupData.giveaways.length > 0) {
+            logger_1.default.info(`Restoring ${backupData.giveaways.length} giveaways`);
+            for (const giveaway of backupData.giveaways) {
+                await restoreGiveaway(instance, giveaway);
+            }
+        }
+        if (backupData.campaignTemplates && backupData.campaignTemplates.length > 0) {
+            logger_1.default.info(`Restoring ${backupData.campaignTemplates.length} campaign templates`);
+            for (const template of backupData.campaignTemplates) {
+                await restoreCampaignTemplate(instance, template);
+            }
+        }
+        if (backupData.audiences && backupData.audiences.length > 0) {
+            logger_1.default.info(`Restoring ${backupData.audiences.length} audiences`);
+            for (const audience of backupData.audiences) {
+                await restoreAudience(instance, audience);
+            }
+        }
         logger_1.default.info(`Application restoration complete for: ${newName}`);
         return {
             applicationId: newAppId,
@@ -575,6 +660,116 @@ async function restoreApplicationAttributes(instance, attributes, destAppId) {
     }
     catch (error) {
         logger_1.default.error(`Failed to restore attributes:`, {
+            message: error.message,
+            response: error.response?.data,
+        });
+    }
+}
+async function restoreLoyaltyProgram(instance, programData) {
+    try {
+        const program = programData.program;
+        const payload = {
+            name: program.name,
+            title: program.title || program.name,
+            description: program.description || '',
+            subscribedApplications: program.subscribedApplications || [],
+            defaultValidity: program.defaultValidity,
+            defaultPending: program.defaultPending,
+            allowSubledger: program.allowSubledger || false,
+            usersPerCardLimit: program.usersPerCardLimit,
+        };
+        const createResponse = await axios_1.default.post(`${instance.url}/v1/loyalty_programs`, payload, {
+            headers: {
+                Authorization: `ManagementKey-v1 ${instance.credentials.apiKey}`,
+                'Content-Type': 'application/json',
+            },
+        });
+        const newProgramId = createResponse.data.data?.id || createResponse.data.id;
+        if (programData.tiers && programData.tiers.length > 0) {
+            for (const tier of programData.tiers) {
+                const tierPayload = {
+                    name: tier.name,
+                    minPoints: tier.minPoints,
+                };
+                await axios_1.default.post(`${instance.url}/v1/loyalty_programs/${newProgramId}/tiers`, tierPayload, {
+                    headers: {
+                        Authorization: `ManagementKey-v1 ${instance.credentials.apiKey}`,
+                        'Content-Type': 'application/json',
+                    },
+                });
+            }
+        }
+        logger_1.default.info(`Restored loyalty program ${program.name} with ID ${newProgramId}`);
+    }
+    catch (error) {
+        logger_1.default.error(`Failed to restore loyalty program:`, {
+            message: error.message,
+            response: error.response?.data,
+        });
+    }
+}
+async function restoreGiveaway(instance, giveaway) {
+    try {
+        const payload = {
+            name: giveaway.name,
+            description: giveaway.description || '',
+            subscribedApplications: giveaway.subscribedApplications || [],
+        };
+        await axios_1.default.post(`${instance.url}/v1/giveaways/pools`, payload, {
+            headers: {
+                Authorization: `ManagementKey-v1 ${instance.credentials.apiKey}`,
+                'Content-Type': 'application/json',
+            },
+        });
+        logger_1.default.info(`Restored giveaway pool: ${giveaway.name}`);
+    }
+    catch (error) {
+        logger_1.default.error(`Failed to restore giveaway:`, {
+            message: error.message,
+            response: error.response?.data,
+        });
+    }
+}
+async function restoreCampaignTemplate(instance, template) {
+    try {
+        const payload = {
+            name: template.name,
+            description: template.description || '',
+            instructions: template.instructions || '',
+            campaignAttributes: template.campaignAttributes || {},
+            couponAttributes: template.couponAttributes || {},
+            state: template.state || 'draft',
+        };
+        await axios_1.default.post(`${instance.url}/v1/campaign_templates`, payload, {
+            headers: {
+                Authorization: `ManagementKey-v1 ${instance.credentials.apiKey}`,
+                'Content-Type': 'application/json',
+            },
+        });
+        logger_1.default.info(`Restored campaign template ${template.name}`);
+    }
+    catch (error) {
+        logger_1.default.error(`Failed to restore campaign template:`, {
+            message: error.message,
+            response: error.response?.data,
+        });
+    }
+}
+async function restoreAudience(instance, audience) {
+    try {
+        const payload = {
+            name: audience.name,
+        };
+        await axios_1.default.post(`${instance.url}/v1/audiences`, payload, {
+            headers: {
+                Authorization: `ManagementKey-v1 ${instance.credentials.apiKey}`,
+                'Content-Type': 'application/json',
+            },
+        });
+        logger_1.default.info(`Restored audience ${audience.name} (members not restored)`);
+    }
+    catch (error) {
+        logger_1.default.error(`Failed to restore audience:`, {
             message: error.message,
             response: error.response?.data,
         });

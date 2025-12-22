@@ -11,6 +11,14 @@ interface Asset {
   id: string | number;
 }
 
+interface AssetNames {
+  applications?: { [key: string]: string };
+  loyalty_programs?: { [key: string]: string };
+  giveaways?: { [key: string]: string };
+  campaign_templates?: { [key: string]: string };
+  audiences?: { [key: string]: string };
+}
+
 interface MigrateParams {
   sourceId: number;
   destId: number;
@@ -18,11 +26,49 @@ interface MigrateParams {
   userId: number;
   newName?: string;
   copySchema?: boolean;
-  appNames?: { [key: string]: string }; // Mapping of appId -> newName for multiple apps
+  appNames?: { [key: string]: string }; // Mapping of appId -> newName for multiple apps (backward compat)
+  assetNames?: AssetNames; // New structure for multi-type asset naming
+}
+
+// Helper function to determine the asset name based on available parameters
+function determineAssetName(
+  asset: Asset,
+  assetNames?: AssetNames,
+  appNames?: { [key: string]: string },
+  newName?: string
+): string | undefined {
+  // Priority: assetNames[type][id] > appNames[id] > newName
+
+  // Check assetNames first (new structure)
+  if (assetNames) {
+    const typeKey = asset.type === 'application' ? 'applications' :
+                    asset.type === 'loyalty_program' ? 'loyalty_programs' :
+                    asset.type === 'giveaway' ? 'giveaways' :
+                    asset.type === 'campaign_template' ? 'campaign_templates' :
+                    asset.type === 'audience' ? 'audiences' : null;
+
+    if (typeKey && assetNames[typeKey]) {
+      const assetId = asset.id.toString();
+      if (assetNames[typeKey]![assetId]) {
+        return assetNames[typeKey]![assetId];
+      }
+    }
+  }
+
+  // Fall back to appNames (backward compat)
+  if (appNames && asset.id) {
+    const appName = appNames[asset.id.toString()] || appNames[asset.id];
+    if (appName) {
+      return appName;
+    }
+  }
+
+  // Fall back to newName
+  return newName;
 }
 
 export const migrate = async (params: MigrateParams) => {
-  const { sourceId, destId, assets, userId, newName, copySchema = true, appNames } = params;
+  const { sourceId, destId, assets, userId, newName, copySchema = true, appNames, assetNames } = params;
 
   logger.info('Migrate service called with params:', {
     sourceId,
@@ -67,12 +113,29 @@ export const migrate = async (params: MigrateParams) => {
       try {
         if (source.type === 'talon') {
           // Determine the name for this specific asset
-          let assetName = newName;
-          if (appNames && asset.id) {
-            // Use individual name from mapping if available
-            assetName = appNames[asset.id.toString()] || appNames[asset.id] || newName;
+          const assetName = determineAssetName(asset, assetNames, appNames, newName);
+
+          // Route to appropriate migration function based on asset type
+          switch (asset.type) {
+            case 'application':
+              await migrateTalonAsset(source, dest, asset, assetName, copySchema);
+              break;
+            case 'loyalty_program':
+              await migrateLoyaltyProgram(source, dest, asset, assetName);
+              break;
+            case 'giveaway':
+              await migrateGiveaway(source, dest, asset, assetName);
+              break;
+            case 'campaign_template':
+              await migrateCampaignTemplate(source, dest, asset, assetName);
+              break;
+            case 'audience':
+              await migrateAudience(source, dest, asset, assetName);
+              break;
+            default:
+              logger.warn(`Unknown asset type: ${asset.type}, falling back to application migration`);
+              await migrateTalonAsset(source, dest, asset, assetName, copySchema);
           }
-          await migrateTalonAsset(source, dest, asset, assetName, copySchema);
         } else if (source.type === 'contentful') {
           await migrateContentfulAsset(source, dest, asset);
         }
@@ -216,6 +279,193 @@ async function migrateTalonAsset(source: any, dest: any, asset: Asset, newName?:
   } else {
     logger.info(`Skipping schema copy as requested by user`);
   }
+}
+
+// Migrate Loyalty Program
+async function migrateLoyaltyProgram(source: any, dest: any, asset: Asset, newName?: string) {
+  const programId = typeof asset.id === 'string' ? parseInt(asset.id, 10) : asset.id;
+  logger.info(`Cloning loyalty program ${programId} with new name: ${newName || 'default'}`);
+
+  // Fetch loyalty program from source
+  const response = await axios.get(`${source.url}/v1/loyalty_programs/${programId}`, {
+    headers: {
+      Authorization: `ManagementKey-v1 ${source.credentials.apiKey}`,
+    },
+  });
+
+  const program = response.data.data || response.data;
+
+  // Create in destination
+  const payload: any = {
+    name: newName || `${program.name} (Copy)`,
+    title: program.title || program.name,
+    description: program.description || '',
+    subscribedApplications: program.subscribedApplications || [],
+    defaultValidity: program.defaultValidity,
+    defaultPending: program.defaultPending,
+    allowSubledger: program.allowSubledger || false,
+    usersPerCardLimit: program.usersPerCardLimit,
+  };
+
+  const createResponse = await axios.post(`${dest.url}/v1/loyalty_programs`, payload, {
+    headers: {
+      Authorization: `ManagementKey-v1 ${dest.credentials.apiKey}`,
+      'Content-Type': 'application/json',
+    },
+  });
+
+  const newProgramId = createResponse.data.data?.id || createResponse.data.id;
+  logger.info(`Created loyalty program ${newProgramId}`);
+
+  // Clone tiers
+  await cloneLoyaltyTiers(source, dest, programId, newProgramId);
+}
+
+// Clone loyalty program tiers
+async function cloneLoyaltyTiers(source: any, dest: any, sourceProgramId: number, destProgramId: number) {
+  try {
+    const tiersResponse = await axios.get(
+      `${source.url}/v1/loyalty_programs/${sourceProgramId}/tiers`,
+      {
+        headers: {
+          Authorization: `ManagementKey-v1 ${source.credentials.apiKey}`,
+        },
+      }
+    );
+
+    const tiers = tiersResponse.data.data || [];
+    logger.info(`Found ${tiers.length} tiers to clone for loyalty program ${sourceProgramId}`);
+
+    for (const tier of tiers) {
+      const tierPayload = {
+        name: tier.name,
+        minPoints: tier.minPoints,
+      };
+
+      await axios.post(
+        `${dest.url}/v1/loyalty_programs/${destProgramId}/tiers`,
+        tierPayload,
+        {
+          headers: {
+            Authorization: `ManagementKey-v1 ${dest.credentials.apiKey}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+    }
+
+    logger.info(`Successfully cloned ${tiers.length} tiers for loyalty program ${destProgramId}`);
+  } catch (error: any) {
+    logger.error(`Error cloning tiers for program ${sourceProgramId}:`, error.message);
+  }
+}
+
+/**
+ * Migrate Giveaway Pool
+ *
+ * Clones a giveaway pool from source instance to destination instance.
+ * Note: Only clones pool metadata (name, description, subscribed apps).
+ * Does NOT clone the actual giveaway codes - those must be imported separately.
+ *
+ * API Endpoints Used:
+ * - GET /v1/giveaways/pools/{poolId} - Fetch source pool details
+ * - POST /v1/giveaways/pools - Create pool in destination
+ */
+async function migrateGiveaway(source: any, dest: any, asset: Asset, newName?: string) {
+  const giveawayId = typeof asset.id === 'string' ? parseInt(asset.id, 10) : asset.id;
+  logger.info(`Cloning giveaway pool ${giveawayId} with new name: ${newName || 'default'}`);
+
+  // Fetch giveaway pool metadata from source instance
+  const response = await axios.get(`${source.url}/v1/giveaways/pools/${giveawayId}`, {
+    headers: {
+      Authorization: `ManagementKey-v1 ${source.credentials.apiKey}`,
+    },
+  });
+
+  const pool = response.data.data || response.data;
+
+  // Create pool in destination instance with new name
+  const payload: any = {
+    name: newName || `${pool.name} (Copy)`,
+    description: pool.description || '',
+    subscribedApplications: pool.subscribedApplications || [],
+  };
+
+  const createResponse = await axios.post(`${dest.url}/v1/giveaways/pools`, payload, {
+    headers: {
+      Authorization: `ManagementKey-v1 ${dest.credentials.apiKey}`,
+      'Content-Type': 'application/json',
+    },
+  });
+
+  const newGiveawayId = createResponse.data.data?.id || createResponse.data.id;
+  logger.info(`Created giveaway pool ${newGiveawayId} in destination instance`);
+}
+
+// Migrate Campaign Template
+async function migrateCampaignTemplate(source: any, dest: any, asset: Asset, newName?: string) {
+  const templateId = typeof asset.id === 'string' ? parseInt(asset.id, 10) : asset.id;
+  logger.info(`Cloning campaign template ${templateId} with new name: ${newName || 'default'}`);
+
+  // Fetch template from source
+  const response = await axios.get(`${source.url}/v1/campaign_templates/${templateId}`, {
+    headers: {
+      Authorization: `ManagementKey-v1 ${source.credentials.apiKey}`,
+    },
+  });
+
+  const template = response.data.data || response.data;
+
+  // Create in destination
+  const payload: any = {
+    name: newName || `${template.name} (Copy)`,
+    description: template.description || '',
+    instructions: template.instructions || '',
+    campaignAttributes: template.campaignAttributes || {},
+    couponAttributes: template.couponAttributes || {},
+    state: template.state || 'draft',
+  };
+
+  const createResponse = await axios.post(`${dest.url}/v1/campaign_templates`, payload, {
+    headers: {
+      Authorization: `ManagementKey-v1 ${dest.credentials.apiKey}`,
+      'Content-Type': 'application/json',
+    },
+  });
+
+  const newTemplateId = createResponse.data.data?.id || createResponse.data.id;
+  logger.info(`Created campaign template ${newTemplateId}`);
+}
+
+// Migrate Audience
+async function migrateAudience(source: any, dest: any, asset: Asset, newName?: string) {
+  const audienceId = typeof asset.id === 'string' ? parseInt(asset.id, 10) : asset.id;
+  logger.info(`Cloning audience ${audienceId} with new name: ${newName || 'default'}`);
+
+  // Fetch audience from source
+  const response = await axios.get(`${source.url}/v1/audiences/${audienceId}`, {
+    headers: {
+      Authorization: `ManagementKey-v1 ${source.credentials.apiKey}`,
+    },
+  });
+
+  const audience = response.data.data || response.data;
+
+  // Create in destination (metadata only, not members)
+  const payload: any = {
+    name: newName || `${audience.name} (Copy)`,
+    // Note: Don't copy members - audiences are usually populated from external systems
+  };
+
+  const createResponse = await axios.post(`${dest.url}/v1/audiences`, payload, {
+    headers: {
+      Authorization: `ManagementKey-v1 ${dest.credentials.apiKey}`,
+      'Content-Type': 'application/json',
+    },
+  });
+
+  const newAudienceId = createResponse.data.data?.id || createResponse.data.id;
+  logger.info(`Created audience ${newAudienceId} (members not copied)`);
 }
 
 // Clone campaigns and rules from source application to destination application

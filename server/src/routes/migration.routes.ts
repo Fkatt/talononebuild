@@ -16,7 +16,7 @@ router.use(authenticateToken);
 router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const userId = req.user!.id;
-    const { sourceId, destId, assets, newName, appNames, copySchema } = req.body;
+    const { sourceId, destId, assets, newName, appNames, assetNames, copySchema } = req.body;
 
     console.log('=== MIGRATION REQUEST RECEIVED ===');
     console.log('userId:', userId);
@@ -24,6 +24,7 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
     console.log('assets:', JSON.stringify(assets));
     console.log('newName:', newName);
     console.log('appNames:', JSON.stringify(appNames));
+    console.log('assetNames:', JSON.stringify(assetNames));
     console.log('copySchema:', copySchema);
 
     logger.info('Migration request received:', {
@@ -33,6 +34,7 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
       assetsCount: assets?.length,
       newName,
       appNames,
+      assetNames,
       copySchema,
       sameInstance: sourceId === destId
     });
@@ -49,19 +51,20 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
       return;
     }
 
-    // If cloning to same instance, require names (either newName or appNames)
-    if (sourceId === destId && !newName && !appNames) {
+    // If cloning to same instance, require names (either newName, appNames, or assetNames)
+    if (sourceId === destId && !newName && !appNames && !assetNames) {
       logger.warn('Validation failed: same instance but no names provided', {
         newName,
         appNames,
+        assetNames,
         hasNewName: !!newName,
         hasAppNames: !!appNames,
-        appNamesKeys: appNames ? Object.keys(appNames) : null
+        hasAssetNames: !!assetNames
       });
       res.status(400).json(
         errorResponse(
           ErrorCodes.VALIDATION_ERROR,
-          `DEBUG: newName=${newName}, appNames=${JSON.stringify(appNames)}, hasAppNames=${!!appNames}, type=${typeof appNames}, keys=${appNames ? Object.keys(appNames).length : 0}`
+          'When cloning to the same instance, new names must be provided (newName, appNames, or assetNames)'
         )
       );
       return;
@@ -76,6 +79,7 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
       userId,
       newName,
       appNames,
+      assetNames,
       copySchema,
     });
 

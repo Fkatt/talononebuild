@@ -8,8 +8,30 @@ const prisma_1 = __importDefault(require("../models/prisma"));
 const instance_service_1 = require("./instance.service");
 const logger_1 = __importDefault(require("../utils/logger"));
 const axios_1 = __importDefault(require("axios"));
+function determineAssetName(asset, assetNames, appNames, newName) {
+    if (assetNames) {
+        const typeKey = asset.type === 'application' ? 'applications' :
+            asset.type === 'loyalty_program' ? 'loyalty_programs' :
+                asset.type === 'giveaway' ? 'giveaways' :
+                    asset.type === 'campaign_template' ? 'campaign_templates' :
+                        asset.type === 'audience' ? 'audiences' : null;
+        if (typeKey && assetNames[typeKey]) {
+            const assetId = asset.id.toString();
+            if (assetNames[typeKey][assetId]) {
+                return assetNames[typeKey][assetId];
+            }
+        }
+    }
+    if (appNames && asset.id) {
+        const appName = appNames[asset.id.toString()] || appNames[asset.id];
+        if (appName) {
+            return appName;
+        }
+    }
+    return newName;
+}
 const migrate = async (params) => {
-    const { sourceId, destId, assets, userId, newName, copySchema = true, appNames } = params;
+    const { sourceId, destId, assets, userId, newName, copySchema = true, appNames, assetNames } = params;
     logger_1.default.info('Migrate service called with params:', {
         sourceId,
         destId,
@@ -42,11 +64,27 @@ const migrate = async (params) => {
         for (const asset of assets) {
             try {
                 if (source.type === 'talon') {
-                    let assetName = newName;
-                    if (appNames && asset.id) {
-                        assetName = appNames[asset.id.toString()] || appNames[asset.id] || newName;
+                    const assetName = determineAssetName(asset, assetNames, appNames, newName);
+                    switch (asset.type) {
+                        case 'application':
+                            await migrateTalonAsset(source, dest, asset, assetName, copySchema);
+                            break;
+                        case 'loyalty_program':
+                            await migrateLoyaltyProgram(source, dest, asset, assetName);
+                            break;
+                        case 'giveaway':
+                            await migrateGiveaway(source, dest, asset, assetName);
+                            break;
+                        case 'campaign_template':
+                            await migrateCampaignTemplate(source, dest, asset, assetName);
+                            break;
+                        case 'audience':
+                            await migrateAudience(source, dest, asset, assetName);
+                            break;
+                        default:
+                            logger_1.default.warn(`Unknown asset type: ${asset.type}, falling back to application migration`);
+                            await migrateTalonAsset(source, dest, asset, assetName, copySchema);
                     }
-                    await migrateTalonAsset(source, dest, asset, assetName, copySchema);
                 }
                 else if (source.type === 'contentful') {
                     await migrateContentfulAsset(source, dest, asset);
@@ -164,6 +202,132 @@ async function migrateTalonAsset(source, dest, asset, newName, copySchema = true
     else {
         logger_1.default.info(`Skipping schema copy as requested by user`);
     }
+}
+async function migrateLoyaltyProgram(source, dest, asset, newName) {
+    const programId = typeof asset.id === 'string' ? parseInt(asset.id, 10) : asset.id;
+    logger_1.default.info(`Cloning loyalty program ${programId} with new name: ${newName || 'default'}`);
+    const response = await axios_1.default.get(`${source.url}/v1/loyalty_programs/${programId}`, {
+        headers: {
+            Authorization: `ManagementKey-v1 ${source.credentials.apiKey}`,
+        },
+    });
+    const program = response.data.data || response.data;
+    const payload = {
+        name: newName || `${program.name} (Copy)`,
+        title: program.title || program.name,
+        description: program.description || '',
+        subscribedApplications: program.subscribedApplications || [],
+        defaultValidity: program.defaultValidity,
+        defaultPending: program.defaultPending,
+        allowSubledger: program.allowSubledger || false,
+        usersPerCardLimit: program.usersPerCardLimit,
+    };
+    const createResponse = await axios_1.default.post(`${dest.url}/v1/loyalty_programs`, payload, {
+        headers: {
+            Authorization: `ManagementKey-v1 ${dest.credentials.apiKey}`,
+            'Content-Type': 'application/json',
+        },
+    });
+    const newProgramId = createResponse.data.data?.id || createResponse.data.id;
+    logger_1.default.info(`Created loyalty program ${newProgramId}`);
+    await cloneLoyaltyTiers(source, dest, programId, newProgramId);
+}
+async function cloneLoyaltyTiers(source, dest, sourceProgramId, destProgramId) {
+    try {
+        const tiersResponse = await axios_1.default.get(`${source.url}/v1/loyalty_programs/${sourceProgramId}/tiers`, {
+            headers: {
+                Authorization: `ManagementKey-v1 ${source.credentials.apiKey}`,
+            },
+        });
+        const tiers = tiersResponse.data.data || [];
+        logger_1.default.info(`Found ${tiers.length} tiers to clone for loyalty program ${sourceProgramId}`);
+        for (const tier of tiers) {
+            const tierPayload = {
+                name: tier.name,
+                minPoints: tier.minPoints,
+            };
+            await axios_1.default.post(`${dest.url}/v1/loyalty_programs/${destProgramId}/tiers`, tierPayload, {
+                headers: {
+                    Authorization: `ManagementKey-v1 ${dest.credentials.apiKey}`,
+                    'Content-Type': 'application/json',
+                },
+            });
+        }
+        logger_1.default.info(`Successfully cloned ${tiers.length} tiers for loyalty program ${destProgramId}`);
+    }
+    catch (error) {
+        logger_1.default.error(`Error cloning tiers for program ${sourceProgramId}:`, error.message);
+    }
+}
+async function migrateGiveaway(source, dest, asset, newName) {
+    const giveawayId = typeof asset.id === 'string' ? parseInt(asset.id, 10) : asset.id;
+    logger_1.default.info(`Cloning giveaway pool ${giveawayId} with new name: ${newName || 'default'}`);
+    const response = await axios_1.default.get(`${source.url}/v1/giveaways/pools/${giveawayId}`, {
+        headers: {
+            Authorization: `ManagementKey-v1 ${source.credentials.apiKey}`,
+        },
+    });
+    const pool = response.data.data || response.data;
+    const payload = {
+        name: newName || `${pool.name} (Copy)`,
+        description: pool.description || '',
+        subscribedApplications: pool.subscribedApplications || [],
+    };
+    const createResponse = await axios_1.default.post(`${dest.url}/v1/giveaways/pools`, payload, {
+        headers: {
+            Authorization: `ManagementKey-v1 ${dest.credentials.apiKey}`,
+            'Content-Type': 'application/json',
+        },
+    });
+    const newGiveawayId = createResponse.data.data?.id || createResponse.data.id;
+    logger_1.default.info(`Created giveaway pool ${newGiveawayId} in destination instance`);
+}
+async function migrateCampaignTemplate(source, dest, asset, newName) {
+    const templateId = typeof asset.id === 'string' ? parseInt(asset.id, 10) : asset.id;
+    logger_1.default.info(`Cloning campaign template ${templateId} with new name: ${newName || 'default'}`);
+    const response = await axios_1.default.get(`${source.url}/v1/campaign_templates/${templateId}`, {
+        headers: {
+            Authorization: `ManagementKey-v1 ${source.credentials.apiKey}`,
+        },
+    });
+    const template = response.data.data || response.data;
+    const payload = {
+        name: newName || `${template.name} (Copy)`,
+        description: template.description || '',
+        instructions: template.instructions || '',
+        campaignAttributes: template.campaignAttributes || {},
+        couponAttributes: template.couponAttributes || {},
+        state: template.state || 'draft',
+    };
+    const createResponse = await axios_1.default.post(`${dest.url}/v1/campaign_templates`, payload, {
+        headers: {
+            Authorization: `ManagementKey-v1 ${dest.credentials.apiKey}`,
+            'Content-Type': 'application/json',
+        },
+    });
+    const newTemplateId = createResponse.data.data?.id || createResponse.data.id;
+    logger_1.default.info(`Created campaign template ${newTemplateId}`);
+}
+async function migrateAudience(source, dest, asset, newName) {
+    const audienceId = typeof asset.id === 'string' ? parseInt(asset.id, 10) : asset.id;
+    logger_1.default.info(`Cloning audience ${audienceId} with new name: ${newName || 'default'}`);
+    const response = await axios_1.default.get(`${source.url}/v1/audiences/${audienceId}`, {
+        headers: {
+            Authorization: `ManagementKey-v1 ${source.credentials.apiKey}`,
+        },
+    });
+    const audience = response.data.data || response.data;
+    const payload = {
+        name: newName || `${audience.name} (Copy)`,
+    };
+    const createResponse = await axios_1.default.post(`${dest.url}/v1/audiences`, payload, {
+        headers: {
+            Authorization: `ManagementKey-v1 ${dest.credentials.apiKey}`,
+            'Content-Type': 'application/json',
+        },
+    });
+    const newAudienceId = createResponse.data.data?.id || createResponse.data.id;
+    logger_1.default.info(`Created audience ${newAudienceId} (members not copied)`);
 }
 async function cloneCampaignsAndRules(source, dest, sourceAppId, destAppId) {
     logger_1.default.info(`Cloning campaigns and rules from app ${sourceAppId} to app ${destAppId}`);

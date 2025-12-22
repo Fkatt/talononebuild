@@ -48,7 +48,9 @@ import {
   Hash,
   Briefcase,
   Target,
-  Eye
+  Eye,
+  Gift,
+  Users
 } from 'lucide-react';
 
 // --- Mock Data & Constants ---
@@ -1752,28 +1754,53 @@ const MigrationView = ({ sites, showNotification }) => {
   // Filter for Talon instances only
   const talonInstances = sites.filter(s => s.type === 'talon');
 
-  const [selectedApplications, setSelectedApplications] = useState([]);
+  // Asset type selection
+  const [activeAssetType, setActiveAssetType] = useState('application');
+
+  // Multi-type selection state
+  const [selectedAssets, setSelectedAssets] = useState({
+    applications: [],
+    loyalty_programs: [],
+    giveaways: [],
+    campaign_templates: [],
+    audiences: []
+  });
+
+  // Multi-type naming state
+  const [assetNames, setAssetNames] = useState({
+    applications: {},
+    loyalty_programs: {},
+    giveaways: {},
+    campaign_templates: {},
+    audiences: {}
+  });
+
+  // Asset data by type
+  const [applications, setApplications] = useState([]);
+  const [loyaltyPrograms, setLoyaltyPrograms] = useState([]);
+  const [giveaways, setGiveaways] = useState([]);
+  const [campaignTemplates, setCampaignTemplates] = useState([]);
+  const [audiences, setAudiences] = useState([]);
+
+  // Permission error tracking
+  const [giveawayPermissionError, setGiveawayPermissionError] = useState(false);
+
+  // UI state
   const [sourceInstance, setSourceInstance] = useState(talonInstances.length > 0 ? talonInstances[0].id : '');
   const [destInstance, setDestInstance] = useState(talonInstances.length > 0 ? talonInstances[0].id : '');
-  const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(false);
   const [isMigrating, setIsMigrating] = useState(false);
-  const [newName, setNewName] = useState('');
   const [showSchemaModal, setShowSchemaModal] = useState(false);
-  const [schemaDiff, setSchemaDiff] = useState(null);
-  const [pendingMigration, setPendingMigration] = useState(null);
   const [showNamesModal, setShowNamesModal] = useState(false);
-  const [appNames, setAppNames] = useState({});
 
-  // Fetch applications when source instance changes
+  // Fetch all assets when source instance changes
   useEffect(() => {
     if (sourceInstance) {
-      fetchApplications(sourceInstance);
+      fetchAllAssets(sourceInstance);
     }
   }, [sourceInstance]);
 
   const fetchApplications = async (instanceId) => {
-    setLoading(true);
     try {
       const token = localStorage.getItem('authToken');
       const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/instances/${instanceId}/applications`, {
@@ -1787,24 +1814,154 @@ const MigrationView = ({ sites, showNotification }) => {
         const error = await response.json();
         const errorMsg = error.error?.message || 'Failed to fetch applications';
         console.error('Application fetch error:', error);
-        showNotification(errorMsg, 'error');
         setApplications([]);
       }
     } catch (error) {
       console.error('Failed to fetch applications:', error);
-      showNotification('Failed to fetch applications: ' + error.message, 'error');
       setApplications([]);
-    } finally {
-      setLoading(false);
     }
   };
 
+  const fetchLoyaltyPrograms = async (instanceId) => {
+    try {
+      const token = localStorage.getItem('authToken');
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/instances/${instanceId}/loyalty_programs`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setLoyaltyPrograms(data.data || []);
+      } else {
+        setLoyaltyPrograms([]);
+      }
+    } catch (error) {
+      console.error('Failed to fetch loyalty programs:', error);
+      setLoyaltyPrograms([]);
+    }
+  };
+
+  // Fetch giveaway pools from Talon.One instance
+  const fetchGiveaways = async (instanceId) => {
+    try {
+      const token = localStorage.getItem('authToken');
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/instances/${instanceId}/giveaways`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setGiveaways(data.data || []);
+        setGiveawayPermissionError(false);
+      } else if (response.status === 401) {
+        // API key doesn't have permission to access giveaway pools endpoint
+        setGiveaways([]);
+        setGiveawayPermissionError(true);
+      } else {
+        setGiveaways([]);
+        setGiveawayPermissionError(false);
+      }
+    } catch (error) {
+      console.error('Failed to fetch giveaways:', error);
+      setGiveaways([]);
+      setGiveawayPermissionError(false);
+    }
+  };
+
+  const fetchCampaignTemplates = async (instanceId) => {
+    try {
+      const token = localStorage.getItem('authToken');
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/instances/${instanceId}/campaign_templates`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setCampaignTemplates(data.data || []);
+      } else {
+        setCampaignTemplates([]);
+      }
+    } catch (error) {
+      console.error('Failed to fetch campaign templates:', error);
+      setCampaignTemplates([]);
+    }
+  };
+
+  const fetchAudiences = async (instanceId) => {
+    try {
+      const token = localStorage.getItem('authToken');
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/instances/${instanceId}/audiences`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setAudiences(data.data || []);
+      } else {
+        setAudiences([]);
+      }
+    } catch (error) {
+      console.error('Failed to fetch audiences:', error);
+      setAudiences([]);
+    }
+  };
+
+  const fetchAllAssets = async (instanceId) => {
+    setLoading(true);
+    await Promise.all([
+      fetchApplications(instanceId),
+      fetchLoyaltyPrograms(instanceId),
+      fetchGiveaways(instanceId),
+      fetchCampaignTemplates(instanceId),
+      fetchAudiences(instanceId)
+    ]);
+    setLoading(false);
+  };
+
+  // Helper functions
+  const getCurrentAssets = () => {
+    switch (activeAssetType) {
+      case 'application': return applications;
+      case 'loyalty_program': return loyaltyPrograms;
+      case 'giveaway': return giveaways;
+      case 'campaign_template': return campaignTemplates;
+      case 'audience': return audiences;
+      default: return [];
+    }
+  };
+
+  const getAssetTypeKey = (type) => {
+    const map = {
+      'application': 'applications',
+      'loyalty_program': 'loyalty_programs',
+      'giveaway': 'giveaways',
+      'campaign_template': 'campaign_templates',
+      'audience': 'audiences'
+    };
+    return map[type] || type;
+  };
+
+  const toggleAsset = (id) => {
+    const key = getAssetTypeKey(activeAssetType);
+    setSelectedAssets(prev => ({
+      ...prev,
+      [key]: prev[key].includes(id)
+        ? prev[key].filter(selectedId => selectedId !== id)
+        : [...prev[key], id]
+    }));
+  };
+
+  const getTotalSelectedCount = () => {
+    return Object.values(selectedAssets).reduce((sum, arr) => sum + arr.length, 0);
+  };
+
   const toggleApplication = (appId) => {
-    setSelectedApplications(prev =>
-      prev.includes(appId)
-        ? prev.filter(id => id !== appId)
-        : [...prev, appId]
-    );
+    setSelectedAssets(prev => ({
+      ...prev,
+      applications: prev.applications.includes(appId)
+        ? prev.applications.filter(id => id !== appId)
+        : [...prev.applications, appId]
+    }));
   };
 
   const checkSchema = async () => {
@@ -1831,13 +1988,11 @@ const MigrationView = ({ sites, showNotification }) => {
     }
   };
 
-  const handleMigrate = async (copySchemaParam?: boolean | any) => {
-    // Handle the parameter - could be boolean from modal, string marker, or event from button click
-    const copySchema = typeof copySchemaParam === 'boolean' ? copySchemaParam : false;
-    const fromNamesModal = copySchemaParam === 'from_names_modal';
+  const handleMigrate = async () => {
+    const totalSelected = getTotalSelectedCount();
 
-    if (selectedApplications.length === 0) {
-      showNotification('Please select at least one application', 'error');
+    if (totalSelected === 0) {
+      showNotification('Please select at least one asset', 'error');
       return;
     }
 
@@ -1846,62 +2001,90 @@ const MigrationView = ({ sites, showNotification }) => {
       return;
     }
 
-    // Step 1: If initial button click and cloning to same instance, show names modal
-    if (sourceInstance === destInstance && !fromNamesModal && typeof copySchemaParam !== 'boolean') {
-      // Initialize appNames for all selected apps
-      const initialNames = {};
-      selectedApplications.forEach(appId => {
-        const app = applications.find(a => a.id === appId);
-        initialNames[appId] = app ? `${app.name} - Copy` : '';
+    // If cloning to same instance, show names modal
+    if (sourceInstance === destInstance) {
+      // Initialize names with defaults for all selected assets
+      const initialNames = {
+        applications: {},
+        loyalty_programs: {},
+        giveaways: {},
+        campaign_templates: {},
+        audiences: {}
+      };
+
+      selectedAssets.applications.forEach(id => {
+        const app = applications.find(a => a.id === id);
+        initialNames.applications[id] = app ? `${app.name} - Copy` : '';
       });
-      setAppNames(initialNames);
+
+      selectedAssets.loyalty_programs.forEach(id => {
+        const lp = loyaltyPrograms.find(l => l.id === id);
+        initialNames.loyalty_programs[id] = lp ? `${lp.name} - Copy` : '';
+      });
+
+      selectedAssets.giveaways.forEach(id => {
+        const gw = giveaways.find(g => g.id === id);
+        initialNames.giveaways[id] = gw ? `${gw.name} - Copy` : '';
+      });
+
+      selectedAssets.campaign_templates.forEach(id => {
+        const ct = campaignTemplates.find(c => c.id === id);
+        initialNames.campaign_templates[id] = ct ? `${ct.name} - Copy` : '';
+      });
+
+      selectedAssets.audiences.forEach(id => {
+        const aud = audiences.find(a => a.id === id);
+        initialNames.audiences[id] = aud ? `${aud.name} - Copy` : '';
+      });
+
+      setAssetNames(initialNames);
       setShowNamesModal(true);
       return;
     }
 
-    // Step 2: If coming from names modal and cloning to same instance, execute migration directly
-    if (sourceInstance === destInstance && fromNamesModal) {
-      // For same instance, always skip schema copy (attributes are shared)
-      await executeMigration(false);
-      return;
-    }
-
-    // Step 3: For different instances, show schema confirmation modal
-    if (typeof copySchemaParam !== 'boolean' && !fromNamesModal && pendingMigration === null && sourceInstance !== destInstance) {
-      setPendingMigration({ copySchema: false });
-      setShowSchemaModal(true);
-      return;
-    }
-
-    // Step 4: Execute migration with user's schema choice
-    if (typeof copySchemaParam === 'boolean') {
-      await executeMigration(copySchema);
-    }
+    // For different instances, execute directly
+    await executeMigration();
   };
 
-  const executeMigration = async (copySchema: boolean) => {
+  const handleConfirmNames = async () => {
+    await executeMigration();
+  };
+
+  const executeMigration = async () => {
     setIsMigrating(true);
-    setShowSchemaModal(false);
     setShowNamesModal(false);
 
     try {
       const token = localStorage.getItem('authToken');
 
-      // Prepare the payload
-      const payload: any = {
+      // Build assets array from all selected asset types
+      const assets = [];
+
+      selectedAssets.applications.forEach(id => {
+        assets.push({ id: `app-${id}`, type: 'application' });
+      });
+      selectedAssets.loyalty_programs.forEach(id => {
+        assets.push({ id, type: 'loyalty_program' });
+      });
+      selectedAssets.giveaways.forEach(id => {
+        assets.push({ id, type: 'giveaway' });
+      });
+      selectedAssets.campaign_templates.forEach(id => {
+        assets.push({ id, type: 'campaign_template' });
+      });
+      selectedAssets.audiences.forEach(id => {
+        assets.push({ id, type: 'audience' });
+      });
+
+      const payload = {
         sourceId: parseInt(sourceInstance, 10),
         destId: parseInt(destInstance, 10),
-        assets: selectedApplications.map(id => ({ id, type: 'application' })),
-        copySchema: copySchema
+        assets,
+        assetNames: sourceInstance === destInstance ? assetNames : undefined,
+        copySchema: true
       };
 
-      // If cloning to same instance, send names mapping
-      if (sourceInstance === destInstance) {
-        payload.appNames = appNames;
-      }
-
-      console.log('Migration payload being sent:', JSON.stringify(payload, null, 2));
-      console.log('sourceInstance:', sourceInstance, 'destInstance:', destInstance);
+      console.log('Migration payload:', JSON.stringify(payload, null, 2));
 
       const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/migrate`, {
         method: 'POST',
@@ -1912,16 +2095,31 @@ const MigrationView = ({ sites, showNotification }) => {
         body: JSON.stringify(payload)
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        showNotification('Migration completed successfully!', 'success');
-        setSelectedApplications([]);
-        setNewName('');
-        setAppNames({});
-        setPendingMigration(null);
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        showNotification(
+          `Successfully migrated ${getTotalSelectedCount()} asset${getTotalSelectedCount() !== 1 ? 's' : ''}!`,
+          'success'
+        );
+
+        // Reset selection
+        setSelectedAssets({
+          applications: [],
+          loyalty_programs: [],
+          giveaways: [],
+          campaign_templates: [],
+          audiences: []
+        });
+        setAssetNames({
+          applications: {},
+          loyalty_programs: {},
+          giveaways: {},
+          campaign_templates: {},
+          audiences: {}
+        });
       } else {
-        const error = await response.json();
-        showNotification(error.error?.message || 'Migration failed', 'error');
+        showNotification(data.error?.message || 'Migration failed', 'error');
       }
     } catch (error) {
       console.error('Migration error:', error);
@@ -1931,12 +2129,32 @@ const MigrationView = ({ sites, showNotification }) => {
     }
   };
 
+  // Tab component
+  const AssetTypeTab = ({ type, label, icon: Icon, count, selectedCount, active, onClick }) => (
+    <button
+      onClick={onClick}
+      className={`flex items-center space-x-2 px-4 py-3 rounded-lg border transition-all ${
+        active
+          ? 'bg-blue-600/20 border-blue-500 text-blue-300'
+          : 'bg-slate-800/50 border-slate-700 text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+      }`}
+    >
+      <Icon size={18} />
+      <span className="font-medium">{label}</span>
+      {count > 0 && (
+        <span className="ml-auto text-xs bg-slate-700 px-2 py-0.5 rounded">
+          {selectedCount > 0 ? `${selectedCount}/` : ''}{count}
+        </span>
+      )}
+    </button>
+  );
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500 h-[calc(100vh-140px)] flex flex-col relative">
       <div className="flex justify-between items-end">
         <div>
           <h2 className="text-2xl font-bold text-white">Migration Hub</h2>
-          <p className="text-slate-400 text-sm">Migrate applications between Talon.One instances with all campaigns, rules, and coupons.</p>
+          <p className="text-slate-400 text-sm">Migrate assets between Talon.One instances including applications, loyalty programs, giveaways, templates, and audiences.</p>
         </div>
       </div>
 
@@ -1976,35 +2194,105 @@ const MigrationView = ({ sites, showNotification }) => {
                 {talonInstances.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
            </div>
-           
+
+           {/* Asset Type Tabs */}
+           <div className="bg-slate-800 p-3 rounded-xl border border-slate-700">
+             <div className="grid grid-cols-2 gap-2">
+               <AssetTypeTab
+                 type="application"
+                 label="Applications"
+                 icon={Database}
+                 count={applications.length}
+                 selectedCount={selectedAssets.applications.length}
+                 active={activeAssetType === 'application'}
+                 onClick={() => setActiveAssetType('application')}
+               />
+               <AssetTypeTab
+                 type="loyalty_program"
+                 label="Loyalty"
+                 icon={Award}
+                 count={loyaltyPrograms.length}
+                 selectedCount={selectedAssets.loyalty_programs.length}
+                 active={activeAssetType === 'loyalty_program'}
+                 onClick={() => setActiveAssetType('loyalty_program')}
+               />
+               <AssetTypeTab
+                 type="giveaway"
+                 label="Giveaways"
+                 icon={Gift}
+                 count={giveaways.length}
+                 selectedCount={selectedAssets.giveaways.length}
+                 active={activeAssetType === 'giveaway'}
+                 onClick={() => setActiveAssetType('giveaway')}
+               />
+               <AssetTypeTab
+                 type="campaign_template"
+                 label="Templates"
+                 icon={Layout}
+                 count={campaignTemplates.length}
+                 selectedCount={selectedAssets.campaign_templates.length}
+                 active={activeAssetType === 'campaign_template'}
+                 onClick={() => setActiveAssetType('campaign_template')}
+               />
+               <AssetTypeTab
+                 type="audience"
+                 label="Audiences"
+                 icon={Users}
+                 count={audiences.length}
+                 selectedCount={selectedAssets.audiences.length}
+                 active={activeAssetType === 'audience'}
+                 onClick={() => setActiveAssetType('audience')}
+               />
+             </div>
+           </div>
+
+           {/* Dynamic Asset List */}
            <div className="bg-slate-800 rounded-xl border border-slate-700 flex-1 overflow-hidden flex flex-col">
               <div className="p-3 border-b border-slate-700 bg-slate-800/50">
-                <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Applications</h3>
+                <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  {activeAssetType.replace(/_/g, ' ').toUpperCase()}S
+                </h3>
               </div>
               <div className="flex-1 overflow-y-auto p-2 space-y-1">
                 {loading ? (
                   <div className="flex items-center justify-center h-full">
                     <Loader2 className="animate-spin text-slate-500" size={24} />
                   </div>
-                ) : applications.length > 0 ? (
-                  applications.map((app) => (
+                ) : getCurrentAssets().length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-full text-slate-500 text-sm px-4 text-center">
+                    {activeAssetType === 'giveaway' && giveawayPermissionError ? (
+                      <>
+                        <p className="text-amber-400 font-medium mb-2">No API Permissions</p>
+                        <p className="text-xs text-slate-400">
+                          The API key does not have permission to access the giveaway pools list endpoint (GET /v1/giveaways/pools)
+                        </p>
+                      </>
+                    ) : (
+                      <p>No {activeAssetType.replace(/_/g, ' ')}s found</p>
+                    )}
+                  </div>
+                ) : (
+                  getCurrentAssets().map((asset) => (
                     <div
-                      key={app.id}
+                      key={asset.id}
                       className="flex items-center p-2 hover:bg-slate-700/50 rounded cursor-pointer group"
-                      onClick={() => toggleApplication(app.id)}
+                      onClick={() => toggleAsset(asset.id)}
                     >
-                      <div className={`w-4 h-4 rounded border mr-3 flex items-center justify-center transition-colors ${selectedApplications.includes(app.id) ? 'bg-blue-500 border-blue-500' : 'border-slate-600'}`}>
-                        {selectedApplications.includes(app.id) && <CheckCircle2 size={12} className="text-white" />}
+                      <div className={`w-4 h-4 rounded border mr-3 flex items-center justify-center transition-colors ${
+                        selectedAssets[getAssetTypeKey(activeAssetType)].includes(asset.id)
+                          ? 'bg-blue-500 border-blue-500'
+                          : 'border-slate-600'
+                      }`}>
+                        {selectedAssets[getAssetTypeKey(activeAssetType)].includes(asset.id) && (
+                          <CheckCircle2 size={12} className="text-white" />
+                        )}
                       </div>
-                      <Database size={16} className="text-blue-400 mr-2" />
-                      <span className="text-sm text-slate-200 font-medium">{app.name}</span>
-                      <span className="ml-auto text-[10px] bg-slate-700 text-slate-400 px-1.5 py-0.5 rounded border border-slate-600">ID: {app.id}</span>
+                      <span className="text-sm text-slate-200 font-medium">{asset.name}</span>
+                      <span className="ml-auto text-[10px] bg-slate-700 text-slate-400 px-1.5 py-0.5 rounded border border-slate-600">
+                        ID: {asset.id}
+                      </span>
                     </div>
                   ))
-                ) : (
-                  <div className="flex items-center justify-center h-full text-slate-500 text-sm">
-                    No applications found
-                  </div>
                 )}
               </div>
            </div>
@@ -2026,14 +2314,14 @@ const MigrationView = ({ sites, showNotification }) => {
 
           <button
             onClick={handleMigrate}
-            disabled={isMigrating || selectedApplications.length === 0 || !talonInstances.length}
+            disabled={isMigrating || getTotalSelectedCount() === 0 || !talonInstances.length}
             className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-slate-600 disabled:cursor-not-allowed text-white p-3 rounded-lg shadow-lg transition-all active:scale-95 flex flex-col items-center gap-1"
           >
             <span className="font-bold text-sm">
               {isMigrating ? 'Migrating...' : sourceInstance === destInstance ? 'Clone Selected' : 'Migrate Selected'}
             </span>
             <span className="text-[10px] opacity-80">
-              {selectedApplications.length} App{selectedApplications.length !== 1 ? 's' : ''} Selected
+              {getTotalSelectedCount()} Item{getTotalSelectedCount() !== 1 ? 's' : ''} Selected
             </span>
           </button>
 
@@ -2124,78 +2412,200 @@ const MigrationView = ({ sites, showNotification }) => {
         </div>
       )}
 
-      {/* Application Names Modal for Multiple Apps */}
+      {/* Asset Names Modal for Cloning */}
       {showNamesModal && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/90 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 w-[600px] max-h-[80vh] overflow-y-auto shadow-2xl">
-            <h3 className="text-lg font-bold text-white mb-4 flex items-center">
-              <Copy className="mr-2 text-blue-400" size={20} />
-              Name Your Cloned Applications
-            </h3>
+          <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 w-[700px] max-h-[85vh] overflow-hidden flex flex-col shadow-2xl">
+            <div className="mb-4">
+              <h3 className="text-lg font-bold text-white mb-2 flex items-center">
+                <Copy className="mr-2 text-blue-400" size={20} />
+                Provide New Names
+              </h3>
+              <p className="text-sm text-slate-300">
+                Cloning to the same instance requires unique names for all selected assets.
+              </p>
+            </div>
 
-            <p className="text-sm text-slate-300 mb-6">
-              Provide a unique name for each cloned application. Default names are suggested based on the original.
-            </p>
-
-            <div className="space-y-4 max-h-[400px] overflow-y-auto">
-              {selectedApplications.map(appId => {
-                const app = applications.find(a => a.id === appId);
-                if (!app) return null;
-
-                return (
-                  <div key={appId} className="bg-slate-900/50 border border-slate-700 rounded-lg p-4">
-                    <div className="flex items-start space-x-3 mb-3">
-                      <Database size={16} className="text-blue-400 flex-shrink-0 mt-1" />
-                      <div className="flex-1">
-                        <p className="text-sm font-medium text-slate-200">{app.name}</p>
-                        <p className="text-xs text-slate-500">ID: {appId}</p>
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-slate-400 uppercase mb-2">
-                        New Name *
-                      </label>
-                      <input
-                        type="text"
-                        className="w-full bg-slate-900 border border-slate-600 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-slate-500"
-                        placeholder={`${app.name} - Copy`}
-                        value={appNames[appId] || ''}
-                        onChange={(e) => setAppNames({...appNames, [appId]: e.target.value})}
-                      />
-                    </div>
+            <div className="flex-1 overflow-y-auto space-y-6 pr-2">
+              {/* Applications Section */}
+              {selectedAssets.applications.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-3 flex items-center">
+                    <Database size={16} className="mr-2 text-blue-400" />
+                    Applications ({selectedAssets.applications.length})
+                  </h4>
+                  <div className="space-y-3">
+                    {selectedAssets.applications.map(appId => {
+                      const app = applications.find(a => a.id === appId);
+                      if (!app) return null;
+                      return (
+                        <div key={appId} className="bg-slate-900/50 border border-slate-700 rounded-lg p-3">
+                          <label className="text-xs text-slate-500 mb-1 block">
+                            Original: <span className="text-slate-300 font-medium">{app.name}</span>
+                          </label>
+                          <input
+                            type="text"
+                            className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-sm text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                            placeholder={`${app.name} - Copy`}
+                            value={assetNames.applications[appId] || ''}
+                            onChange={(e) => setAssetNames({
+                              ...assetNames,
+                              applications: { ...assetNames.applications, [appId]: e.target.value }
+                            })}
+                          />
+                        </div>
+                      );
+                    })}
                   </div>
-                );
-              })}
+                </div>
+              )}
+
+              {/* Loyalty Programs Section */}
+              {selectedAssets.loyalty_programs.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-3 flex items-center">
+                    <Award size={16} className="mr-2 text-yellow-400" />
+                    Loyalty Programs ({selectedAssets.loyalty_programs.length})
+                  </h4>
+                  <div className="space-y-3">
+                    {selectedAssets.loyalty_programs.map(id => {
+                      const program = loyaltyPrograms.find(lp => lp.id === id);
+                      if (!program) return null;
+                      return (
+                        <div key={id} className="bg-slate-900/50 border border-slate-700 rounded-lg p-3">
+                          <label className="text-xs text-slate-500 mb-1 block">
+                            Original: <span className="text-slate-300 font-medium">{program.name}</span>
+                          </label>
+                          <input
+                            type="text"
+                            className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-sm text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                            placeholder={`${program.name} - Copy`}
+                            value={assetNames.loyalty_programs[id] || ''}
+                            onChange={(e) => setAssetNames({
+                              ...assetNames,
+                              loyalty_programs: { ...assetNames.loyalty_programs, [id]: e.target.value }
+                            })}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Giveaways Section */}
+              {selectedAssets.giveaways.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-3 flex items-center">
+                    <Gift size={16} className="mr-2 text-pink-400" />
+                    Giveaways ({selectedAssets.giveaways.length})
+                  </h4>
+                  <div className="space-y-3">
+                    {selectedAssets.giveaways.map(id => {
+                      const giveaway = giveaways.find(g => g.id === id);
+                      if (!giveaway) return null;
+                      return (
+                        <div key={id} className="bg-slate-900/50 border border-slate-700 rounded-lg p-3">
+                          <label className="text-xs text-slate-500 mb-1 block">
+                            Original: <span className="text-slate-300 font-medium">{giveaway.name}</span>
+                          </label>
+                          <input
+                            type="text"
+                            className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-sm text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                            placeholder={`${giveaway.name} - Copy`}
+                            value={assetNames.giveaways[id] || ''}
+                            onChange={(e) => setAssetNames({
+                              ...assetNames,
+                              giveaways: { ...assetNames.giveaways, [id]: e.target.value }
+                            })}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Campaign Templates Section */}
+              {selectedAssets.campaign_templates.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-3 flex items-center">
+                    <Layout size={16} className="mr-2 text-purple-400" />
+                    Campaign Templates ({selectedAssets.campaign_templates.length})
+                  </h4>
+                  <div className="space-y-3">
+                    {selectedAssets.campaign_templates.map(id => {
+                      const template = campaignTemplates.find(t => t.id === id);
+                      if (!template) return null;
+                      return (
+                        <div key={id} className="bg-slate-900/50 border border-slate-700 rounded-lg p-3">
+                          <label className="text-xs text-slate-500 mb-1 block">
+                            Original: <span className="text-slate-300 font-medium">{template.name}</span>
+                          </label>
+                          <input
+                            type="text"
+                            className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-sm text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                            placeholder={`${template.name} - Copy`}
+                            value={assetNames.campaign_templates[id] || ''}
+                            onChange={(e) => setAssetNames({
+                              ...assetNames,
+                              campaign_templates: { ...assetNames.campaign_templates, [id]: e.target.value }
+                            })}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Audiences Section */}
+              {selectedAssets.audiences.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-3 flex items-center">
+                    <Users size={16} className="mr-2 text-green-400" />
+                    Audiences ({selectedAssets.audiences.length})
+                  </h4>
+                  <div className="space-y-3">
+                    {selectedAssets.audiences.map(id => {
+                      const audience = audiences.find(a => a.id === id);
+                      if (!audience) return null;
+                      return (
+                        <div key={id} className="bg-slate-900/50 border border-slate-700 rounded-lg p-3">
+                          <label className="text-xs text-slate-500 mb-1 block">
+                            Original: <span className="text-slate-300 font-medium">{audience.name}</span>
+                          </label>
+                          <input
+                            type="text"
+                            className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-sm text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                            placeholder={`${audience.name} - Copy`}
+                            value={assetNames.audiences[id] || ''}
+                            onChange={(e) => setAssetNames({
+                              ...assetNames,
+                              audiences: { ...assetNames.audiences, [id]: e.target.value }
+                            })}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-slate-700">
               <button
-                onClick={() => {
-                  setShowNamesModal(false);
-                  setAppNames({});
-                }}
+                onClick={() => setShowNamesModal(false)}
                 className="px-4 py-2 text-sm text-slate-400 hover:text-white transition-colors"
               >
                 Cancel
               </button>
               <button
-                onClick={() => {
-                  // Validate all names are filled
-                  const allNamesFilled = selectedApplications.every(appId => appNames[appId]?.trim());
-                  if (!allNamesFilled) {
-                    showNotification('Please provide names for all applications', 'error');
-                    return;
-                  }
-                  // Continue with migration flow
-                  // For same instance, this will skip to executeMigration
-                  // For different instances, this will show schema modal
-                  handleMigrate('from_names_modal');
-                }}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center"
-                disabled={!selectedApplications.every(appId => appNames[appId]?.trim())}
+                onClick={handleConfirmNames}
+                className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-lg text-sm font-medium flex items-center"
               >
                 <ArrowRightLeft size={14} className="mr-2" />
-                Continue to Clone
+                Confirm & Clone
               </button>
             </div>
           </div>
@@ -2947,6 +3357,100 @@ const BackupView = ({ backups, protectedMode, sites, showNotification, setBackup
                       </div>
                     );
                   })}
+                </div>
+              )}
+
+              {/* Loyalty Programs Section */}
+              {viewDetailsModal.data && viewDetailsModal.data.loyaltyPrograms && viewDetailsModal.data.loyaltyPrograms.length > 0 && (
+                <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-4 mt-4">
+                  <h4 className="text-sm font-bold text-white mb-3 flex items-center">
+                    <Award size={16} className="mr-2 text-yellow-400" />
+                    Loyalty Programs ({viewDetailsModal.data.loyaltyPrograms.length})
+                  </h4>
+                  <div className="space-y-2">
+                    {viewDetailsModal.data.loyaltyPrograms.map((lpDetail, idx) => (
+                      <div key={idx} className="bg-slate-800/50 border border-slate-700/50 rounded p-3 flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-medium text-slate-200">{lpDetail.program.name}</p>
+                          <p className="text-xs text-slate-500">ID: {lpDetail.program.id}</p>
+                        </div>
+                        {lpDetail.tiers && lpDetail.tiers.length > 0 && (
+                          <span className="text-xs px-2 py-1 bg-yellow-500/10 text-yellow-400 rounded">
+                            {lpDetail.tiers.length} tiers
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Giveaways Section */}
+              {viewDetailsModal.data && viewDetailsModal.data.giveaways && viewDetailsModal.data.giveaways.length > 0 && (
+                <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-4 mt-4">
+                  <h4 className="text-sm font-bold text-white mb-3 flex items-center">
+                    <Gift size={16} className="mr-2 text-pink-400" />
+                    Giveaways ({viewDetailsModal.data.giveaways.length})
+                  </h4>
+                  <div className="space-y-2">
+                    {viewDetailsModal.data.giveaways.map((giveaway, idx) => (
+                      <div key={idx} className="bg-slate-800/50 border border-slate-700/50 rounded p-3">
+                        <p className="text-sm font-medium text-slate-200">{giveaway.name}</p>
+                        <p className="text-xs text-slate-500">ID: {giveaway.id}</p>
+                        {giveaway.description && (
+                          <p className="text-xs text-slate-400 mt-1">{giveaway.description}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Campaign Templates Section */}
+              {viewDetailsModal.data && viewDetailsModal.data.campaignTemplates && viewDetailsModal.data.campaignTemplates.length > 0 && (
+                <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-4 mt-4">
+                  <h4 className="text-sm font-bold text-white mb-3 flex items-center">
+                    <Layout size={16} className="mr-2 text-purple-400" />
+                    Campaign Templates ({viewDetailsModal.data.campaignTemplates.length})
+                  </h4>
+                  <div className="space-y-2">
+                    {viewDetailsModal.data.campaignTemplates.map((template, idx) => (
+                      <div key={idx} className="bg-slate-800/50 border border-slate-700/50 rounded p-3 flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-medium text-slate-200">{template.name}</p>
+                          <p className="text-xs text-slate-500">ID: {template.id}</p>
+                          {template.description && (
+                            <p className="text-xs text-slate-400 mt-1">{template.description}</p>
+                          )}
+                        </div>
+                        {template.state && (
+                          <span className={`text-xs px-2 py-1 rounded ${
+                            template.state === 'enabled' ? 'bg-green-500/10 text-green-400' : 'bg-slate-600/20 text-slate-400'
+                          }`}>
+                            {template.state}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Audiences Section */}
+              {viewDetailsModal.data && viewDetailsModal.data.audiences && viewDetailsModal.data.audiences.length > 0 && (
+                <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-4 mt-4">
+                  <h4 className="text-sm font-bold text-white mb-3 flex items-center">
+                    <Users size={16} className="mr-2 text-green-400" />
+                    Audiences ({viewDetailsModal.data.audiences.length})
+                  </h4>
+                  <div className="space-y-2">
+                    {viewDetailsModal.data.audiences.map((audience, idx) => (
+                      <div key={idx} className="bg-slate-800/50 border border-slate-700/50 rounded p-3">
+                        <p className="text-sm font-medium text-slate-200">{audience.name}</p>
+                        <p className="text-xs text-slate-500">ID: {audience.id}</p>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
 

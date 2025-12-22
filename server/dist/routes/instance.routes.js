@@ -213,5 +213,164 @@ router.get('/:id/key', async (req, res) => {
         res.status(500).json((0, response_1.errorResponse)(response_1.ErrorCodes.INTERNAL_ERROR, error instanceof Error ? error.message : 'Failed to retrieve API key'));
     }
 });
+router.get('/:id/loyalty_programs', async (req, res) => {
+    try {
+        const instanceId = parseInt(req.params.id, 10);
+        const userId = req.user.id;
+        logger_1.default.info(`Fetching loyalty programs for instance ${instanceId}, user ${userId}`);
+        const instance = await (0, instance_service_1.getInstance)(instanceId, userId);
+        logger_1.default.info(`Instance found: ${instance.name} (${instance.type}) at ${instance.url}`);
+        if (instance.type !== 'talon') {
+            logger_1.default.warn(`Invalid instance type: ${instance.type}, expected 'talon'`);
+            res.status(400).json((0, response_1.errorResponse)(response_1.ErrorCodes.VALIDATION_ERROR, 'Only Talon.One instances support this endpoint'));
+            return;
+        }
+        const axios = require('axios');
+        const apiUrl = `${instance.url}/v1/loyalty_programs`;
+        logger_1.default.info(`Calling Talon.One API: ${apiUrl}`);
+        const response = await axios.get(apiUrl, {
+            headers: {
+                Authorization: `ManagementKey-v1 ${instance.credentials.apiKey}`,
+            },
+            params: { pageSize: 1000 },
+            timeout: 10000,
+        });
+        logger_1.default.info(`Talon.One API response status: ${response.status}`);
+        if (response.status === 200) {
+            const loyaltyPrograms = response.data?.data?.map((lp) => ({
+                id: lp.id,
+                name: lp.name || lp.title || `Loyalty Program ${lp.id}`,
+            })) || [];
+            logger_1.default.info(`Successfully fetched ${loyaltyPrograms.length} loyalty programs`);
+            res.json((0, response_1.successResponse)(loyaltyPrograms));
+        }
+        else {
+            logger_1.default.error(`Unexpected response status: ${response.status}`);
+            res.status(500).json((0, response_1.errorResponse)(response_1.ErrorCodes.INTERNAL_ERROR, 'Failed to fetch loyalty programs'));
+        }
+    }
+    catch (error) {
+        logger_1.default.error('Get loyalty programs error:', error);
+        res.status(500).json((0, response_1.errorResponse)(response_1.ErrorCodes.INTERNAL_ERROR, error instanceof Error ? error.message : 'Failed to fetch loyalty programs'));
+    }
+});
+router.get('/:id/giveaways', async (req, res) => {
+    try {
+        const instanceId = parseInt(req.params.id, 10);
+        const userId = req.user.id;
+        logger_1.default.info(`Fetching giveaways for instance ${instanceId}, user ${userId}`);
+        const instance = await (0, instance_service_1.getInstance)(instanceId, userId);
+        if (instance.type !== 'talon') {
+            res.status(400).json((0, response_1.errorResponse)(response_1.ErrorCodes.VALIDATION_ERROR, 'Only Talon.One instances support this endpoint'));
+            return;
+        }
+        const axios = require('axios');
+        try {
+            const poolsResponse = await axios.get(`${instance.url}/v1/giveaways/pools`, {
+                headers: {
+                    Authorization: `ManagementKey-v1 ${instance.credentials.apiKey}`,
+                },
+                params: { pageSize: 1000 },
+                timeout: 10000,
+            });
+            const pools = poolsResponse.data?.data || [];
+            logger_1.default.info(`Found ${pools.length} giveaway pools, response status: ${poolsResponse.status}`);
+            if (pools.length > 0) {
+                logger_1.default.info(`First giveaway pool:`, JSON.stringify(pools[0]));
+            }
+            const giveaways = pools.map((pool) => ({
+                id: pool.id,
+                name: pool.name || `Giveaway Pool ${pool.id}`,
+                description: pool.description || '',
+                subscribedApplications: pool.subscribedApplications || []
+            }));
+            logger_1.default.info(`Successfully fetched ${giveaways.length} giveaway pools`);
+            res.json((0, response_1.successResponse)(giveaways));
+        }
+        catch (axiosError) {
+            logger_1.default.error('Get giveaways error:', {
+                status: axiosError.response?.status,
+                statusText: axiosError.response?.statusText,
+                data: axiosError.response?.data,
+                message: axiosError.message
+            });
+            res.json((0, response_1.successResponse)([]));
+        }
+    }
+    catch (error) {
+        logger_1.default.error('Get giveaways outer error:', error);
+        res.status(500).json((0, response_1.errorResponse)(response_1.ErrorCodes.INTERNAL_ERROR, error instanceof Error ? error.message : 'Failed to fetch giveaways'));
+    }
+});
+router.get('/:id/campaign_templates', async (req, res) => {
+    try {
+        const instanceId = parseInt(req.params.id, 10);
+        const userId = req.user.id;
+        logger_1.default.info(`Fetching campaign templates for instance ${instanceId}, user ${userId}`);
+        const instance = await (0, instance_service_1.getInstance)(instanceId, userId);
+        if (instance.type !== 'talon') {
+            res.status(400).json((0, response_1.errorResponse)(response_1.ErrorCodes.VALIDATION_ERROR, 'Only Talon.One instances support this endpoint'));
+            return;
+        }
+        const axios = require('axios');
+        const response = await axios.get(`${instance.url}/v1/campaign_templates`, {
+            headers: {
+                Authorization: `ManagementKey-v1 ${instance.credentials.apiKey}`,
+            },
+            params: { pageSize: 1000 },
+            timeout: 10000,
+        });
+        if (response.status === 200) {
+            const templates = response.data?.data?.map((tpl) => ({
+                id: tpl.id,
+                name: tpl.name || `Template ${tpl.id}`,
+            })) || [];
+            logger_1.default.info(`Successfully fetched ${templates.length} campaign templates`);
+            res.json((0, response_1.successResponse)(templates));
+        }
+        else {
+            res.status(500).json((0, response_1.errorResponse)(response_1.ErrorCodes.INTERNAL_ERROR, 'Failed to fetch campaign templates'));
+        }
+    }
+    catch (error) {
+        logger_1.default.error('Get campaign templates error:', error);
+        res.status(500).json((0, response_1.errorResponse)(response_1.ErrorCodes.INTERNAL_ERROR, error instanceof Error ? error.message : 'Failed to fetch campaign templates'));
+    }
+});
+router.get('/:id/audiences', async (req, res) => {
+    try {
+        const instanceId = parseInt(req.params.id, 10);
+        const userId = req.user.id;
+        logger_1.default.info(`Fetching audiences for instance ${instanceId}, user ${userId}`);
+        const instance = await (0, instance_service_1.getInstance)(instanceId, userId);
+        if (instance.type !== 'talon') {
+            res.status(400).json((0, response_1.errorResponse)(response_1.ErrorCodes.VALIDATION_ERROR, 'Only Talon.One instances support this endpoint'));
+            return;
+        }
+        const axios = require('axios');
+        const response = await axios.get(`${instance.url}/v1/audiences`, {
+            headers: {
+                Authorization: `ManagementKey-v1 ${instance.credentials.apiKey}`,
+            },
+            params: { pageSize: 1000 },
+            timeout: 10000,
+        });
+        if (response.status === 200) {
+            const audiences = response.data?.data?.map((aud) => ({
+                id: aud.id,
+                name: aud.name || `Audience ${aud.id}`,
+            })) || [];
+            logger_1.default.info(`Successfully fetched ${audiences.length} audiences`);
+            res.json((0, response_1.successResponse)(audiences));
+        }
+        else {
+            res.status(500).json((0, response_1.errorResponse)(response_1.ErrorCodes.INTERNAL_ERROR, 'Failed to fetch audiences'));
+        }
+    }
+    catch (error) {
+        logger_1.default.error('Get audiences error:', error);
+        res.status(500).json((0, response_1.errorResponse)(response_1.ErrorCodes.INTERNAL_ERROR, error instanceof Error ? error.message : 'Failed to fetch audiences'));
+    }
+});
 exports.default = router;
 //# sourceMappingURL=instance.routes.js.map
