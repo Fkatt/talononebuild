@@ -294,7 +294,12 @@ router.get('/:id/giveaways', async (req, res) => {
                 data: axiosError.response?.data,
                 message: axiosError.message
             });
-            res.json((0, response_1.successResponse)([]));
+            if (axiosError.response?.status === 401) {
+                res.status(401).json((0, response_1.successResponse)([]));
+            }
+            else {
+                res.json((0, response_1.successResponse)([]));
+            }
         }
     }
     catch (error) {

@@ -458,9 +458,13 @@ router.get('/:id/giveaways', async (req: AuthRequest, res: Response): Promise<vo
         message: axiosError.message
       });
 
-      // Return empty array on error (401 errors are handled gracefully by frontend)
-      // Frontend displays permission error message when it receives empty array + 401 status
-      res.json(successResponse([]));
+      // Pass through 401 status to frontend for permission error handling
+      if (axiosError.response?.status === 401) {
+        res.status(401).json(successResponse([]));
+      } else {
+        // For other errors, return empty array with 200 status
+        res.json(successResponse([]));
+      }
     }
   } catch (error: any) {
     logger.error('Get giveaways outer error:', error);
